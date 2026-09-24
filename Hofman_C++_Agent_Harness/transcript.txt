@@ -1,0 +1,23 @@
+role: system
+Be concise.
+---
+role: user
+koko
+---
+role: assistant
+I am doing well, thank you! How can I help you?
+---
+role: user
+loko
+---
+role: assistant
+I can definitely do that for you. Anything else?
+---
+role: user
+kolo
+---
+role: assistant
+Goodbye!<|end_conversation|>
+---
+role: user
+mmkl
