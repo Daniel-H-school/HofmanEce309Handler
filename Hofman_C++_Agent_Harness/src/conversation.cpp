@@ -1,5 +1,6 @@
 #include "core/conversation.h"    //Uses message objects
 #include <string>       //Uses string data types
+#include <stdexcept>     //For out of bounds exception throwing
 
 //Conversation class
 // class Conversation {
@@ -15,11 +16,11 @@
 
     //Destructor to clear out dynamic memory
     Conversation::~Conversation(){
-        if (data_ == nullptr){      //If there isn't any memory allocated or 
-                                    //Owned by this conversation, does nothing
-        } else {
-            delete[] data_;           //Otherwise de-allocates it
-        }
+        // if (data_ == nullptr){      //If there isn't any memory allocated or 
+        //                             //Owned by this conversation, does nothing
+        // } else {
+            delete[] data_;           //Otherwise de-allocates it as it leaves
+        // }
     }
 
     //Copy constructor to deep copy messages into new memory
@@ -96,10 +97,15 @@
         return size_;
     }
 
+    std::size_t Conversation::capacity() const noexcept{  //Returns current capacity of conversation for testing
+        return capacity_;
+    }
+
     const Message& Conversation::at(std::size_t i) const{ //Returns the message at the given address
         //Remember to test array_out_of_bounds condition
-        if (i >= size_) i = size_;  //If trying to index beyond size, snaps back to last element
-        else if (i < 0) i = 0;      //If trying to give negative index, snaps to first element
+        if (this->size() == 0 || i >= this->size() || i < 0) { //Array out of bounds
+            throw std::out_of_range("Conversation index out of bounds");
+        }
         return data_[i];            //Returns data at that address
     }
 
@@ -108,6 +114,7 @@
     }
 
     const Message* Conversation::end()   const noexcept{  //Returns a pointer to the latest message of the conversation
-        return data_ + size_; //pointer to last message in conversation
+        if (data_ == nullptr) return nullptr;
+        return data_ + size_ - 1; //pointer to last message in conversation
     }
 //};

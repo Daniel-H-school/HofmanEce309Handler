@@ -11,6 +11,8 @@ public:
 
     struct Out { std::string safe_text; bool sentinel_found; };
 
+    std::size_t pending_size();
+
     // Feed the next chunk. Returns text guaranteed NOT to be part of
     // the sentinel (safe to print immediately) and whether the
     // sentinel has now been fully seen.

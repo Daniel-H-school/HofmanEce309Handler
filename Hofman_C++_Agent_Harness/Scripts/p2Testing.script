@@ -1,0 +1,5 @@
+role: system
+Testing.
+---
+chunk: 5
+Goodbye!<|end_conversation|>

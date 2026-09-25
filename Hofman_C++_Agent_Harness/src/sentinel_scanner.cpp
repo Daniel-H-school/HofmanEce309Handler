@@ -16,11 +16,17 @@
     //Data type for output type
     struct Out { std::string safe_text; bool sentinel_found; };
 
+    //Returns size of pending for testing
+    std::size_t SentinelScanner::pending_size(){
+        return pending_.size();
+    }
+
+    
     //Feeds next chunk and returns text guaranteed not to be
     //  part of the sentinel, as well as when the sentinel has
     //  been confirmed to have been seen.
     SentinelScanner::Out SentinelScanner::feed(std::string_view chunk){
-        if (pending_.size() < sentinel_.size()-1){  //For the very first few chunks until pending_ is the length of sentinel_.size() -1,
+        if (pending_.size() < (sentinel_.size() - 1)){  //For the very first few chunks until pending_ is the length of sentinel_.size() -1,
             std::string initialCheck = pending_;
             initialCheck.append(chunk);
             std::size_t i = initialCheck.find(sentinel_);  //Checks the chunk without pending_
@@ -29,8 +35,8 @@
                     pending_ += chunk;                                      //Do so
                     return {"", false};                                     //Return nothing yet
                 } else {                                                    //Else if a whole chunk would make pending_ longer than sentinel_.size()
-                    pending_ = initialCheck.substr(initialCheck.size() - sentinel_.size(), sentinel_.size());   //pending equals the last sentinel_.size() letters
-                    return {initialCheck.substr(0,initialCheck.size() - sentinel_.size()), false};                    //Output first couple of characters
+                    pending_ = initialCheck.substr(initialCheck.size() - sentinel_.size() + 1, sentinel_.size() - 1);   //pending equals the last sentinel_.size()-1 letters
+                    return {initialCheck.substr(0,initialCheck.size() - sentinel_.size() + 1), false};                    //Output first couple of characters
                 }
             } else {    //In the very unlikely event that the sentinel was found between the checks.
                         //Shouldn't need to construct an output like below because more than one sentinel won't fit
@@ -45,13 +51,13 @@
         std::size_t index = toCheck.find(sentinel_); //Checks for the sentinel text O(M * N)
         
         if (index == std::string::npos){    //If sentinel not found
-            pending_ = toCheck.substr(chunkLen); //Takes last letters for next pending
+            pending_ = toCheck.substr(toCheck.size() - (sentinel_.size()-1)); //Takes last letters for next pending
             return {toCheck.substr(0,chunkLen), false}; //Outputs safe text
         } else {
             std::string output = "";                //Creates a string for output to go into
             std::size_t lastIndex = 0;              //Last index for use in constructing output
             while (index != std::string::npos){     //While there are sentinels to find (in case chunk is really big and contains multiple)
-                output += toCheck.substr(lastIndex, index);  //Adds to output
+                output += toCheck.substr(lastIndex, index - lastIndex);  //Adds to output
                 lastIndex = index + sentinel_.size();   //Updates lastIndex to be the next good index
                 index = toCheck.find(sentinel_, lastIndex);        //Finds next instance of sentinel (if existant)
             }
