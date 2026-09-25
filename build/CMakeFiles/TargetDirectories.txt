@@ -1,4 +1,0 @@
-/mnt/c/Users/danie/Documents/ECE309_Harness/Hofman_C++_Agent_Harness/build/CMakeFiles/miniharness.dir
-/mnt/c/Users/danie/Documents/ECE309_Harness/Hofman_C++_Agent_Harness/build/CMakeFiles/test_p2.dir
-/mnt/c/Users/danie/Documents/ECE309_Harness/Hofman_C++_Agent_Harness/build/CMakeFiles/edit_cache.dir
-/mnt/c/Users/danie/Documents/ECE309_Harness/Hofman_C++_Agent_Harness/build/CMakeFiles/rebuild_cache.dir
