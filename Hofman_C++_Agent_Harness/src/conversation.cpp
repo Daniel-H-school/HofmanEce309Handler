@@ -74,8 +74,8 @@
         if (size_ >= capacity_){                    //If out of room
             if (capacity_ == 0) {
                 capacity_ = 1;      //If appending to the uninitialized array, sets it to a value that can be multipliled, as well as allocates memory for data_
-                data_ = new Message[capacity_];
-                data_[0] = m;
+                data_ = new Message[capacity_];   //Creates array to hold this one data point
+                data_[0] = std::move(m);    //Moves message over to better transfer ownership and save on message copying.
                 size_ = 1;
                 return;         //Exits early to avoid unnecesary reallocation
             }
@@ -90,7 +90,7 @@
         }
         //After allocating new memory (potentially), time to append the next message
         size_++;            //Increments size
-        data_[size_ - 1] = m;   //Puts message in new array slot
+        data_[size_ - 1] = std::move(m);   //Puts message in new array slot
     }
 
     std::size_t Conversation::size() const noexcept{  //Returns current size of conversation
