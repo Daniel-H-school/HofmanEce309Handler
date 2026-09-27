@@ -1,5 +1,29 @@
 role: system
-Testing.
+Be concise.
+---
+chunk: 5
+role: assistant
+No messages past this point should be reached.<|end_conversation|> Or even after this
+---
+chunk: 5
+role: assistant
+This is a test program response. It is unimportant 1
+---
+chunk: 5
+role: assistant
+This is a test program response. It is unimportant 2
+---
+chunk: 5
+role: assistant
+This is a test program response. It is unimportant 3
+---
+chunk: 5
+role: assistant
+This is a test program response. It is unimportant 4
+---
+chunk: 5
+role: assistant
+This is a test program response. It is unimportant 5
 ---
 chunk: 5
 Goodbye!<|end_conversation|>

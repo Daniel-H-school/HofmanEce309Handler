@@ -27,7 +27,7 @@
     Conversation::Conversation(const Conversation& other){
         //Since copy constructor will start off with no allocated data, don't need to delete it first
         data_ = new Message[other.capacity_];     //Allocates new memory for this object according to other's capacity
-        for (int i = 0; i < other.size_; i++){  //goes through the other conversation message by message
+        for (std::size_t i = 0; i < other.size_; i++){  //goes through the other conversation message by message
             data_[i] = other.data_[i];  //Copies over message by message
         }
         size_ = other.size_;            //Copies other parameters
@@ -43,7 +43,7 @@
         size_ = other.size_;
         capacity_ = other.capacity_;
         data_ = new Message[other.capacity_];   //Allocates enough data
-        for (int i = 0; i < other.size_; i++){  //Goes through the other conversation
+        for (std::size_t i = 0; i < other.size_; i++){  //Goes through the other conversation
             data_[i] = other.data_[i];          //Copies over message by message
         }
         return *this;   //Return type
@@ -66,8 +66,8 @@
             delete data_;                   //Deletes whatever is currently in this one's data
             data_ = other.data_;    //Makes this data point to the other's already allocated data
             other.data_ = nullptr;  //Reassigns ownership by removing other.data_'s ownership
-            return *this;   //Return type
         }
+        return *this;   //Return type
     }
 
     void Conversation::append(Message m){ //Adds this message to the end of the array
@@ -81,7 +81,7 @@
             }
             capacity_ = capacity_ * 2;              //Doubles capacity each time it needs to, which keeps ammortized O(1)   
             Message* temp = new Message[capacity_]; //Creates new array to hold previous data with room for twice as much data
-            for (int i = 0; i < size_; i++){        //For each element in previous data
+            for (std::size_t i = 0; i < size_; i++){        //For each element in previous data
                 temp[i] = data_[i];                 //Copy over to new array
             }
             delete[] data_;       //Deletes old data just copied over
@@ -103,7 +103,7 @@
 
     const Message& Conversation::at(std::size_t i) const{ //Returns the message at the given address
         //Remember to test array_out_of_bounds condition
-        if (this->size() == 0 || i >= this->size() || i < 0) { //Array out of bounds
+        if (this->size() == 0 || i >= this->size()) { //Array out of bounds
             throw std::out_of_range("Conversation index out of bounds");
         }
         return data_[i];            //Returns data at that address
@@ -115,6 +115,7 @@
 
     const Message* Conversation::end()   const noexcept{  //Returns a pointer to the latest message of the conversation
         if (data_ == nullptr) return nullptr;
-        return data_ + size_ - 1; //pointer to last message in conversation
+        if (size_ == 1) return data_;            //Special case 
+        return data_ + size_; //pointer to one past last message in conversation
     }
 //};

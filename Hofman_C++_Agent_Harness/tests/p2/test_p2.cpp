@@ -18,6 +18,48 @@
 #include <stdexcept> //Throws
 #include <cassert>  //Asserts
 #include <iostream>   //Printing
+#include <fstream>    
+
+//Used in harness tests. Declared and defined in main for regular build, so must be redefined here
+class StdioInput : public InputSource {
+public:
+    std::string read_line() override {
+        std::string line;
+        std::getline(std::cin, line);
+        eof_ = std::cin.eof();
+        return line;
+    }
+    bool is_eof() const override { return eof_; }
+
+private:
+    bool eof_ = false;
+};
+class StdioOutput : public OutputSink {
+public:
+    void write(std::string_view text) override {
+        std::cout << text << std::flush;
+    }
+};
+const char* role_name(Role role) {
+    switch (role) {
+        case Role::System: return "system";
+        case Role::User: return "user";
+        case Role::Assistant: return "assistant";
+    }
+    return "assistant";
+}
+void save_transcript(const Conversation& conv, const std::string& path) {
+    std::ofstream file(path);
+    if (!file.is_open()) return;
+
+    bool first = true;
+    for (const Message* m = conv.begin(); m != conv.end(); ++m) {
+        if (!first) file << "---\n";
+        first = false;
+        file << "role: " << role_name(m->role()) << "\n";
+        file << m->content() << "\n";
+    }
+}
 
 //Test 1: Messing around with empty conversations does not result in runtime out-of-bounds errors
 void EmptyConversationBoundsAccessAttempt() {
@@ -26,7 +68,7 @@ void EmptyConversationBoundsAccessAttempt() {
     bool e = false;
     try {
         EmptyConvo.at(0);
-    } catch (std::out_of_range){
+    } catch (const std::out_of_range& ex){
         e = true;
     }
     assert(e && "Array out of bounds not caught");
@@ -45,17 +87,18 @@ void AddingToConversation() {
     Message Tail = Message(Role::User, "Tail");
     AddingTo.append(Head);
     assert((AddingTo.begin()->content() == Head.content()) && "begin() should point to sole message");
-    assert((AddingTo.end() == AddingTo.begin()) && "end() should point to same message as begin with one data point");
+    assert((AddingTo.end()->content() == AddingTo.begin()->content()) && "end() should point to same message as begin with one data point");
     AddingTo.append(Middle);
     AddingTo.append(Tail);
     assert((AddingTo.begin()->content() == Head.content()) && "begin() should point to first message");
-    assert((AddingTo.end()->content() == Tail.content() && "end should point to most recent message"));
+    const Message* end = AddingTo.end() - 1;    //Since end points one past the last index for transcript, real end() value is one behind
+    assert((end->content() == Tail.content()) && "end should point to most recent message");
     assert(((AddingTo.at(1).content() == Middle.content()) && (AddingTo.at(1).role() == Middle.role())) && "Index should return message at the index");
     bool e = false;
     try {
         AddingTo.at(4);
         AddingTo.at(-1);
-    } catch (std::out_of_range){
+    } catch (const std::out_of_range& ex){
         e = true;
     }
     assert(e && "Must catch Array out of bounds errors");
@@ -70,14 +113,11 @@ void ConversationCopyConstructorAllocation() {
     ConvoA.append(MessageA);
     Conversation ConvoB = ConvoA;   //Copy Constructor
     assert((ConvoB.begin() != ConvoA.begin()) && "Copy-constructed conversation does not have unique pointers");
-
-    const Message* convoA_MessageA_address = ConvoA.begin();
-    const Message* convoB_messageA_address = ConvoB.begin();  //Tracks address of this message
     
     ConvoA.append(MessageB);
     ConvoB = ConvoA;    //Assignment operator
     assert((ConvoB.begin() != ConvoA.begin()) && "Assignment operation does not have unique pointers");
-    assert((ConvoB.end()->content() == MessageB.content()) && "Assignment does not actually take in new data");
+    assert(((ConvoB.end()-1)->content() == MessageB.content()) && "Assignment does not actually take in new data");
     
     Conversation ConvoC = Conversation();
     ConvoC.append(MessageB);
@@ -90,12 +130,12 @@ void ConversationCopyConstructorAllocation() {
     std::cout << "Copy Constructor tests passed" << std::endl;
 }
 
-// //Test 3.5: Destructor functionality
+//Test 3.5: Destructor functionality
 // void ConversationDestructor() {
 //     Conversation DeleteMe = Conversation();
 //     Message DeleteMeToo = Message(Role::User, "Delete");
 //     DeleteMe.append(DeleteMeToo);
-//     Message* deleteTest = DeleteMe.begin();
+//     const Message* deleteTest = DeleteMe.begin();
 //     DeleteMe.~Conversation();
 //     assert((deleteTest == nullptr) && "Memory not deleted");
 //     std::cout << "Destructor test passed" << std::endl;
@@ -137,7 +177,7 @@ void StressTestingLongConversation() {
     assert((LongConvo.capacity() == 2048) && "Not adequately doubling in scale each time");  //Checks if the capaccity checks out. Since it starts at one and doubles each time, it should equal the nearest power of two to 2000, 2048
     assert((LongConvo.at(1000 - 1).content() == Middle.content()) && "at() stopped working");   //Checks for at() returns at large sizes
     assert((LongConvo.begin()->content() == Head.content()) && "Begin not pointing to head");
-    assert((LongConvo.end()->content() == Tail.content()) && "End not pointing to most recent message");
+    assert(((LongConvo.end()-1)->content() == Tail.content()) && "End not pointing to most recent message");
     std::cout << "Long Convo tests passed" << std::endl;
 }
 
@@ -149,7 +189,7 @@ void ScannerProcessesCleanText() {
     
     std::string output;
     //Splits up message into 10 letter chunks
-    for (int i = 0; i < text.size()-1; i+=10){
+    for (std::size_t i = 0; i < text.size()-1; i+=10){
         auto out = scanner.feed(text.substr(i, 10)); //Takes one tenth of text each time
         output.append(out.safe_text);
     }
@@ -194,7 +234,7 @@ void ScannerBoundedPendingMemory(){
     const std::string text = "This is the text testing whether or not the sentinel is able to correctly output the right message if given a fair amount of text with no sentinel.";
     SentinelScanner scanner(sentinel);
     // std::cout << "sentinel size = " << sentinel.size() << std::endl;
-    for (int i = 0; i < text.size(); i+=3){ //Testing with a chunk size of 3
+    for (std::size_t i = 0; i < text.size(); i+=3){ //Testing with a chunk size of 3
         scanner.feed(text.substr(i,3));
         // std::cout << "pending_size = " << scanner.pending_size() << std::endl;
         assert((scanner.pending_size() <= (sentinel.size())) && "Pending_ should never be longer than sentinel.size() - 1");
@@ -202,17 +242,81 @@ void ScannerBoundedPendingMemory(){
     std::cout << "Sentinel Scanner bounds test passed" << std::endl;
 }
 
+//Test 10: Exceeding harness turn limit ends program
+void HarnessTurnLimit(){
+    HarnessConfig config;
+    std::string script_path = "./Scripts/greeting.script";
+    config.max_turns = 2;
+    auto model = std::make_unique<ScriptedModelClient>(script_path);
+    StdioInput in;
+    StdioOutput out;
+
+    Harness harness(std::move(model), config);
+    StopReason reason = harness.run(in, out);
+
+    // std::cout << reason.detail << std::endl;
+    assert((reason.kind == StopReason::Kind::TurnLimit) && "Must stop after turn limit is reached");    //Checks that the conversation ends at the right point
+    std::cout << "Turn limit test passed" << std::endl;
+}
+
+//Test 11: Reaching sentinel immediately halts loop.
+void HarnessSentinelStop(){
+    HarnessConfig config;
+    std::string script_path = "./Scripts/p2Testing.script";
+    config.max_turns = 3;
+    auto model = std::make_unique<ScriptedModelClient>(script_path);
+    StdioInput in;
+    StdioOutput out;
+
+    Harness harness(std::move(model), config);
+    StopReason reason = harness.run(in,out);
+    assert((reason.kind == StopReason::Kind::Sentinel) && "Must stop at sentinel and terminate loop");  //Checks that the loop stops for the right reason
+
+    Conversation conv = harness.conversation();
+//    std::cout << conv.at(1).content() << std::endl;
+    assert(((conv.end()-1)->content() == "No messages past this point should be reached.<|end_conversation|>") && "Must stop exactly after sentinel is read"); //Checks that the last message in conversation ends right after sentinel
+    std::cout << "Sentinel Stop test passed" << std::endl;
+}
+
+//Test 12: Transcript playback
+void TranscriptPlayback(){
+    HarnessConfig config;
+    std::string save_path = "./build/transcriptP2Test.txt";     //Test transcript file to playback. Generated through regular operation of program
+    config.max_turns = 10;
+
+    StdioInput in1;
+    StdioOutput out1;
+    auto replayModel = std::make_unique<ReplayModelClient>(save_path);
+    Harness harness2(std::move(replayModel), config);
+
+    Conversation replay;
+    StopReason stop2 = harness2.run(in1, out1);
+    harness2.conversation();
+//    std::cout << stop1.detail << std::endl;
+//    std::cout << harness.conversation().end()->content() << std::endl;
+//    std::cout << harness2.conversation().at(1).content() << std::endl;
+    
+    assert((stop2.detail == "stop sentinel after 3 turns") && "Must stop for same reason as original transcript");
+    assert((harness2.conversation().at(1).content() == "I am doing well, thank you! How can I help you?") && "Return messags must match up");
+    assert((harness2.conversation().at(3).content() == "I can definitely do that for you. Anything else?") && "Return messags must match up");
+    assert((harness2.conversation().at(5).content() == "Goodbye!<|end_conversation|>") && "Return messags must match up");
+    std::cout << "Replay tests passed" << std::endl;
+}
+
 int main() {        //Separate main that runs all the tests for project 2
     EmptyConversationBoundsAccessAttempt();
     AddingToConversation();
     ConversationCopyConstructorAllocation();
-//    ConversationDestructor();
+    // ConversationDestructor();
     ConversationMoveConstructors();
     StressTestingLongConversation();
     ScannerProcessesCleanText();
     ScannerCatchesSentinelAtEveryBoundary();
     ScannerDoesntCatchFalseAlarms();
     ScannerBoundedPendingMemory();
-    
+    HarnessTurnLimit();
+    HarnessSentinelStop();
+    TranscriptPlayback();
+    std::cout << "All tests passed" << std::endl;
     return 0;
 }

@@ -1,5 +1,6 @@
 #include "core/sentinel_scanner.h"
 #include <string>
+#include <iostream> //For testing
 #include <cmath>
 
 // class SentinelScanner {
@@ -54,17 +55,10 @@
             pending_ = toCheck.substr(toCheck.size() - (sentinel_.size()-1)); //Takes last letters for next pending
             return {toCheck.substr(0,chunkLen), false}; //Outputs safe text
         } else {
-            std::string output = "";                //Creates a string for output to go into
-            std::size_t lastIndex = 0;              //Last index for use in constructing output
-            while (index != std::string::npos){     //While there are sentinels to find (in case chunk is really big and contains multiple)
-                output += toCheck.substr(lastIndex, index - lastIndex);  //Adds to output
-                lastIndex = index + sentinel_.size();   //Updates lastIndex to be the next good index
-                index = toCheck.find(sentinel_, lastIndex);        //Finds next instance of sentinel (if existant)
-            }
-            // Once all the sentinels have been found and output has been constructed
-            output += toCheck.substr(lastIndex, chunkLen - lastIndex);   //Adds last bit to the output
-            pending_ = toCheck.substr(chunkLen); //Set up next pending
-            return {output, true};  //Output
+            std::string safe = toCheck.substr(0,index);                //Creates a string for output to go into
+            pending_.clear();
+//            std::cout << safe << std::endl;
+            return {safe, true};
         }
 
     }   
@@ -74,6 +68,7 @@
         //Since input stream ran out before a sentinel could be confirmed,
         //  whatever is held inside pending_ right now is safe, and
         //  no sentinel was found
+        
         return {pending_, false};
     }
 //};

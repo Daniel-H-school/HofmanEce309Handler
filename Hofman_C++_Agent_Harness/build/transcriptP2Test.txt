@@ -2,19 +2,19 @@ role: system
 Be concise.
 ---
 role: user
-hola
+Womp womp
 ---
 role: assistant
 I am doing well, thank you! How can I help you?
 ---
 role: user
-work pls
+ajksa
 ---
 role: assistant
 I can definitely do that for you. Anything else?
 ---
 role: user
-nope!
+aijos
 ---
 role: assistant
 Goodbye!<|end_conversation|>
