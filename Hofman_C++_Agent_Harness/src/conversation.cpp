@@ -53,7 +53,7 @@
         size_ = other.size_;            //Copies over the other size
         capacity_ = other.capacity_;    //Copies over the other capacity
         if (data_ != other.data_){      //Checks if both sides are the same object and won't delete the one memory if so
-            if (data_ != nullptr) delete[] data_;               //Deletes whatever is currently in this one's data, if anything
+            delete[] data_;             //Deletes whatever is currently in this one's data, if anything
             data_ = other.data_;    //Makes this data point to the other's already allocated data
             other.data_ = nullptr;  //Makes others data_ point to nothing to prevent it getting deleted unintentionally
         }
@@ -63,7 +63,7 @@
         size_ = other.size_;            //Copies over the other size
         capacity_ = other.capacity_;    //Copies over the other capacity
         if (data_ != other.data_){      //In case the two data_ pointers point to the same thing, doesn't delete the only source of data
-            delete data_;                   //Deletes whatever is currently in this one's data
+            delete[] data_;                   //Deletes whatever is currently in this one's data
             data_ = other.data_;    //Makes this data point to the other's already allocated data
             other.data_ = nullptr;  //Reassigns ownership by removing other.data_'s ownership
         }
