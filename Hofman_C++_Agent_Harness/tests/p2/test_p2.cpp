@@ -148,12 +148,18 @@ void ConversationMoveConstructors() {
     ConvoA.append(MessageA);
     const Message* beginPtr = ConvoA.begin();
 
-    Conversation ConvoB = Conversation();
-    ConvoB = std::move(ConvoA);
+    Conversation ConvoB = Conversation(); 
+    ConvoB = std::move(ConvoA); //Move assignment
 
-    assert((ConvoB.begin() == beginPtr) && "After copy, does not point to right side's data");
-    assert((ConvoA.begin() == nullptr) && "After copy, does not unassign right side's pointers");
+
+    assert((ConvoB.begin() == beginPtr) && "After move assignment, does not point to right side's data");
+    assert((ConvoA.begin() == nullptr) && "After move assignment, does not unassign right side's pointers");
    
+    Conversation ConvoC = std::move(ConvoB);
+    assert((ConvoC.begin() == beginPtr) && "After move constructor, does not point to right side's data");
+    assert((ConvoB.begin() == nullptr) && "After move constructor, does not unassign right side's pointers");
+
+
     std::cout << "Move constructor tests passed" << std::endl;
 }
 
