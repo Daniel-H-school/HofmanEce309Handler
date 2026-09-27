@@ -1,7 +1,7 @@
 role: system
 Be concise.
 ---
-chunk: 5
+chunk: 1
 role: assistant
 No messages past this point should be reached.<|end_conversation|> Or even after this
 ---
