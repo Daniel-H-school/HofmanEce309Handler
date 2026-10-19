@@ -70,4 +70,9 @@ private:
     // Your buckets, your element count, and any private helpers you want
     // (for example a rehash function). Store std::unique_ptr<Tool> in the
     // buckets so that pointers handed out by find() survive a resize.
+    size_t buckets;
+    size_t elements;
+    size_t longestSearch;   //Holds how long the longest search should be for the open indexing before it is safe to give up
+                            //Never needs to be deleted since currently no functionality of removing tools from hashtable
+    std::vector<std::unique_ptr<Tool>> hashTable; //Uses a vector type for better memory management, but is coded more like an array for simplicity.
 };
