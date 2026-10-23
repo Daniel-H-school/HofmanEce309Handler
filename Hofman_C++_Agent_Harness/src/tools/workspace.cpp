@@ -6,6 +6,7 @@
 // workspace_provided.cpp.
 
 #include "tools/workspace.h"
+#include <iostream>
 
 namespace fs = std::filesystem;
 
@@ -16,7 +17,7 @@ bool Workspace::resolve(std::string_view user_path, fs::path* out,
         return false;
     }
 
-    if (user_path.find('\0')){  //If fed a string with incorrect formatting (nul char which would mess up future steps; should be optimized out by operating system under normal use)
+    if (user_path.find('\0') != -1){  //If fed a string with incorrect formatting (nul char which would mess up future steps; should be optimized out by operating system under normal use)
         *reason = "unexpected null character in path";
         return false;
     }
@@ -30,7 +31,7 @@ bool Workspace::resolve(std::string_view user_path, fs::path* out,
 
     std::filesystem::path simplified_path = path.lexically_normal();  //Creates a simplified path without unnecessary components like // or /../
 
-    if (*simplified_path.begin() == ".."){    //If this simplified path starts out by reaching beyond its workspace's scope
+    if (simplified_path.string().substr(0,2) == ".."){    //If this simplified path starts out by reaching beyond its workspace's scope
         *reason = "path reaches beyond scope with ../";
         return false;
     }
