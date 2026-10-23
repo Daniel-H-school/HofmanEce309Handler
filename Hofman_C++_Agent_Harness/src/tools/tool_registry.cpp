@@ -37,7 +37,7 @@ bool ToolRegistry::add(std::unique_ptr<Tool> tool) {    //Hash table uses open i
     if (((double) elements + 1 / (double) buckets) >= 0.75){ //If this new tool would make the hashtable exceed its threshold for efficient open indexing
         std::vector<std::unique_ptr<Tool>> tempTable; //Temporary hashtable
         tempTable.resize(buckets << 1); //Temptable 2x larger than current table
-        for (int i = 0; i < buckets; i++){  //Indexes through the previous hashtable
+        for (std::size_t i = 0; i < buckets; i++){  //Indexes through the previous hashtable
             if (hashTable[i] != nullptr){   //If hashtable at that index was equal to nullptr, would not need to copy over
                 std::size_t index = hash(hashTable[i]->name()) & (buckets - 1); //Get new hash index of current tool
                 tempTable[index] = std::move(hashTable[i]);     //Move over tool pointer to new hashtable
@@ -66,7 +66,7 @@ bool ToolRegistry::add(std::unique_ptr<Tool> tool) {    //Hash table uses open i
 //Returns the raw pointer to the tool -- NOT transfers ownership
 Tool* ToolRegistry::find(std::string_view name) const {
     size_t index = (hash(name) & (buckets - 1));
-    for (int i = 0; i < longestSearch; i++){
+    for (std::size_t i = 0; i < longestSearch; i++){
         if (hashTable[index] != nullptr && hashTable[index]->name().compare(name) == 0){ //If this index has the same name as what we're looking for
             return hashTable[index].get();  //Returns the raw pointer to that tool
         }
@@ -87,7 +87,7 @@ std::size_t ToolRegistry::size() const noexcept {
 //Calls every function(tool) for every tool in the hashTable
 void ToolRegistry::for_each(const std::function<void(const Tool&)>& fn) const {
     std::size_t found_tools = 0;    //A counter to stop finding elements early if they all have been found already
-    for (int i = 0; i < buckets; i++){  //Goes through each element
+    for (std::size_t i = 0; i < buckets; i++){  //Goes through each element
         
         if (hashTable[i] != nullptr){
             found_tools++;  //Says it found a tool

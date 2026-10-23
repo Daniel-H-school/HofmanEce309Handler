@@ -7,6 +7,7 @@
 
 #include "tools/workspace.h"
 #include <iostream>
+#include <string>
 
 namespace fs = std::filesystem;
 
@@ -17,7 +18,7 @@ bool Workspace::resolve(std::string_view user_path, fs::path* out,
         return false;
     }
 
-    if (user_path.find('\0') != -1){  //If fed a string with incorrect formatting (nul char which would mess up future steps; should be optimized out by operating system under normal use)
+    if (user_path.find('\0') != std::string::npos){  //If fed a string with incorrect formatting (nul char which would mess up future steps; should be optimized out by operating system under normal use)
         *reason = "unexpected null character in path";
         return false;
     }

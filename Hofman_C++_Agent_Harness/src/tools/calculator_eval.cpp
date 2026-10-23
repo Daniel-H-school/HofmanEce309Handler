@@ -14,7 +14,7 @@ bool calc_evaluate(const std::vector<CalcToken>& tokens, double* out,
     std::vector<CalcToken> ops; //Vector of operations
     
 
-    for (int i = 0; i < tokens.size(); i++){    //Iterates through the tokens vector
+    for (std::size_t i = 0; i < tokens.size(); i++){    //Iterates through the tokens vector
         CalcToken token = tokens[i];    //Gets a token 
         if (token.kind == CalcToken::Kind::Number){ //If this token is a number
             values.push_back(token.value);  //Push onto values stack
@@ -75,6 +75,8 @@ bool calc_evaluate(const std::vector<CalcToken>& tokens, double* out,
                 case CalcToken::Kind::Minus:
                     toPush = left - right;
                     break;
+                default:    //If currently a Lparen or Rparen (or Number) --> impossible
+                    break;  //Break to avoid warning
                 }
                 values.push_back(toPush);   //Push computed value to stack
                 ops.pop_back();             //Pop out applied operator
@@ -110,6 +112,8 @@ bool calc_evaluate(const std::vector<CalcToken>& tokens, double* out,
                     break;
                 case CalcToken::Kind::Minus:
                     toPush = left - right;
+                    break;
+                default:       //For Lparen, Rparen, and number -->should be impossible, ignored if not
                     break;
                 }
                 values.push_back(toPush);   //Push computed value to stack
@@ -147,6 +151,9 @@ bool calc_evaluate(const std::vector<CalcToken>& tokens, double* out,
         case CalcToken::Kind::Minus:
             toPush = left - right;
             break;
+        default:        //Shouldn't be a Lparen or Rparen or Number left in operator stack
+            *error = "improperly formatted operation";  //Error in case
+            return false;
         }
         values.push_back(toPush);   //Push computed value to stack
         ops.pop_back();             //Pop out operated value
