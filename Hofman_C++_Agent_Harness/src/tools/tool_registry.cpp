@@ -18,7 +18,7 @@ ToolRegistry::ToolRegistry(){
 ToolRegistry::~ToolRegistry() = default;   // unique_ptrs in your buckets free the tools
 
 std::size_t ToolRegistry::hash(std::string_view key) noexcept {
-    std::uint64_t h = 1469598103934665607ULL;   //Offset basis for FNV-1a hash function
+    std::uint64_t h = 1469598103934665603ULL;   //Offset basis for FNV-1a hash function
 
     for (unsigned char c : key) {   //For each character in the key
         h ^= c;                 //XOR modifies the lower 8-bits of the hash value based on the current character
@@ -34,28 +34,70 @@ bool ToolRegistry::add(std::unique_ptr<Tool> tool) {    //Hash table uses open i
 //        tool->~Tool();   //Destroys this tool copy to free up its memory
         return false;
     } 
-    if (((double) elements + 1 / (double) buckets) >= 0.75){ //If this new tool would make the hashtable exceed its threshold for efficient open indexing
+    if ((((double) elements + 1) / (double) buckets) >= 0.75){ //If this new tool would make the hashtable exceed its threshold for efficient open indexing
         std::vector<std::unique_ptr<Tool>> tempTable; //Temporary hashtable
         tempTable.resize(buckets << 1); //Temptable 2x larger than current table
+        longestSearch = 0;  //Resets longest search for resized table
         for (std::size_t i = 0; i < buckets; i++){  //Indexes through the previous hashtable
             if (hashTable[i] != nullptr){   //If hashtable at that index was equal to nullptr, would not need to copy over
-                std::size_t index = hash(hashTable[i]->name()) & (buckets - 1); //Get new hash index of current tool
-                tempTable[index] = std::move(hashTable[i]);     //Move over tool pointer to new hashtable
+                std::size_t index = hash(hashTable[i]->name()) % (buckets << 1); //Get new hash index of current tool
+                std::size_t j = 0;
+                while (longestSearch < 64){    //Searches around index for open bucket (uses open indexing)
+                    if (index + j >= (buckets << 1)){ 
+                        if (tempTable[0 + (index + j - (buckets << 1))] == nullptr) {
+                            index = (0 + (index + j - (buckets << 1)));
+                            break; //Loops over
+                        }
+                    } else if (tempTable[index + j] == nullptr){   //If open spot
+                        index = index + j;
+                        break;
+                    }
+                    if (index - j >= (buckets << 1)){      //Due to size_t being unsigned, will underflow and become much bigger than buckets after going "negative"
+                        if (tempTable[(buckets << 1) + (index - j)] == nullptr) {
+                            index = ((buckets << 1) + (index - j)); 
+                            break; //Loops under
+                        }
+                    } else if (tempTable[index - j] == nullptr){
+                        index = index - j;
+                        break;
+                    }
+                    j++;
+                    if (j > longestSearch) longestSearch = j;
+                }
+                tempTable[index] = std::move(hashTable[i]);
             }
         }
         //After everything copied over
         hashTable = std::move(tempTable);   //Move over the data to active hashtable
         buckets = buckets << 1; //Permanantly doubles buckets
         //Because of vectors, everything should get deleted aftewards
-
-
     }
     
     //Once no resizing is needed
-    std::size_t index = hash(tool->name()) & (buckets - 1); //Calculate index using hash function
-    while (hashTable[index] != nullptr){    //Searches around index for open bucket (uses open indexing)
-        longestSearch++;
-        if (++index >= buckets) index = 0;  //Iterates back to start after running out of buckets
+//    std::cout << "Adding tool" << std::endl;
+    std::size_t index = hash(tool->name()) % (buckets); //Calculate index using hash function
+    std::size_t i = 0;
+    while (longestSearch < 64){    //Searches around index for open bucket (uses open indexing)
+        if (index + i >= buckets){ 
+            if (hashTable[0 + (index + i - buckets)] == nullptr) {
+                index = (0 + (index + i - buckets)); 
+                break; //Loops over
+            }
+        } else if (hashTable[index + i] == nullptr){   //If open spot
+            index = index + i;
+            break;
+        }
+        if (index - i >= buckets){      //Due to size_t being unsigned, will underflow and become much bigger than buckets after going "negative"
+            if (hashTable[buckets + (index - i)] == nullptr) {
+                index = (buckets + (index - i));
+                break; //Loops under
+            }
+        } else if (hashTable[index - i] == nullptr){
+            index = index - i;
+            break;
+        }
+        i++;
+        if (i > longestSearch) longestSearch = i;
     }
     hashTable[index] = std::move(tool); //Moves the tool pointer into the hashTable
     elements++;    //Updates elements counter
@@ -65,15 +107,30 @@ bool ToolRegistry::add(std::unique_ptr<Tool> tool) {    //Hash table uses open i
 //Tries to find a tool by its name's hash value. Searches around according to open indexing
 //Returns the raw pointer to the tool -- NOT transfers ownership
 Tool* ToolRegistry::find(std::string_view name) const {
-    size_t index = (hash(name) & (buckets - 1));
-    for (std::size_t i = 0; i < longestSearch; i++){
-        if (hashTable[index] != nullptr && hashTable[index]->name().compare(name) == 0){ //If this index has the same name as what we're looking for
-            return hashTable[index].get();  //Returns the raw pointer to that tool
+    size_t index = (hash(name) % (buckets));
+    std::size_t i = 0;
+    while (i <= longestSearch){
+        //Searches the above indeces
+        if (index + i >= buckets){
+            if (hashTable[0 + (index + i - buckets)] != nullptr && hashTable[0 + (index + i - buckets)]->name().compare(name) == 0){    //Checks that there is something in that spot, then checks the name
+                return hashTable[0 + (index + i - buckets)].get();
+            }
+        } else {
+            if (hashTable[index + i] != nullptr && hashTable[index + i]->name().compare(name) == 0){
+                return hashTable[index + i].get();
+            }
         }
-        if (name.compare("read_file") == 0){
+        //Searches the below indeces
+        if (index - i >= buckets){
+            if (hashTable[buckets + (index - i)] != nullptr && hashTable[buckets + (index - i)]->name().compare(name)==0){
+                return hashTable[buckets + (index - i)].get();
+            }
+        } else {
+            if (hashTable[index - i] != nullptr && hashTable[index - i]->name().compare(name) == 0){
+                return hashTable[index - i].get();
+            }
         }
-        //Else when it is not found at that index
-        if (++index >= buckets) index = 0;  //Loop around if necessary. If not reiterates with next index
+        i++;
     }
     //If tool was not found within the longest possible search distance, returns nullptr to signify it didn't find it
     return nullptr;

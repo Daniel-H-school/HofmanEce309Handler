@@ -120,6 +120,7 @@ bool calc_evaluate(const std::vector<CalcToken>& tokens, double* out,
                 ops.pop_back();             //Pop out operated value
                 topOp = ops.back();         //Resets topOp to go again
             }
+            ops.pop_back();     //Pops out Lparen
         }
     }
     //Once tokens "end" and can back out of any remaining operators
