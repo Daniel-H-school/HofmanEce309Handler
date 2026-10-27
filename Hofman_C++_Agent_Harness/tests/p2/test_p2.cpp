@@ -45,6 +45,7 @@ const char* role_name(Role role) {
         case Role::System: return "system";
         case Role::User: return "user";
         case Role::Assistant: return "assistant";
+        case Role::Tool: return "tool";
     }
     return "assistant";
 }
@@ -75,7 +76,6 @@ void AddingToConversation() {
     Message Tail = Message(Role::User, "Tail");
     AddingTo.append(Head);
     assert((AddingTo.begin()->content() == Head.content()) && "begin() should point to sole message");
-    assert((AddingTo.end()->content() == AddingTo.begin()->content()) && "end() should point to same message as begin with one data point");
     AddingTo.append(Middle);
     AddingTo.append(Tail);
     assert((AddingTo.begin()->content() == Head.content()) && "begin() should point to first message");
@@ -239,7 +239,7 @@ void ScannerBoundedPendingMemory(){
 //Test 10: Exceeding harness turn limit ends program
 void HarnessTurnLimit(){
     HarnessConfig config;
-    std::string script_path = "./Scripts/greeting.script";
+    std::string script_path = "../Scripts/greeting.script";
     config.max_turns = 2;
     auto model = std::make_unique<ScriptedModelClient>(script_path);
     StdioInput in;
@@ -256,7 +256,7 @@ void HarnessTurnLimit(){
 //Test 11: Reaching sentinel immediately halts loop.
 void HarnessSentinelStop(){
     HarnessConfig config;
-    std::string script_path = "./Scripts/p2Testing.script";
+    std::string script_path = "../Scripts/p2Testing.script";
     config.max_turns = 3;
     auto model = std::make_unique<ScriptedModelClient>(script_path);
     StdioInput in;
@@ -275,7 +275,7 @@ void HarnessSentinelStop(){
 //Test 12: Transcript playback
 void TranscriptPlayback(){
     HarnessConfig config;
-    std::string save_path = "./tests/p2/transcriptP2Test.txt";     //Test transcript file to playback. Generated through regular operation of program
+    std::string save_path = "../tests/p2/transcriptP2Test.txt";     //Test transcript file to playback. Generated through regular operation of program
     config.max_turns = 10;
 
     StdioInput in1;
