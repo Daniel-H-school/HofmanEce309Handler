@@ -1,316 +1,221 @@
 // tests/p2/test_p2.cpp
 //
-// YOUR test suite goes here. At least 12 assert-based test cases — see
-// spec §5 for the required categories and the sample test for the
-// expected level of rigor.
-//
-// This file is a stub so the project builds out of the box; replace the
-// body of main() with your own tests.
+// PROVIDED. P2 regression suite. It uses only the P2 public interface of
+// Conversation and SentinelScanner, plus the provided Harness with NO tools,
+// so it must pass unchanged on top of your P2 code (interface-freeze rule).
+// You may add your own P2 tests to this file.
+
+#include "../mini_test.h"
 
 #include "core/conversation.h"
-#include "core/message.h"
 #include "core/sentinel_scanner.h"
 #include "harness/harness.h"
+#include "harness/transcript.h"
 #include "model/replay_client.h"
-#include "model/scripted_client.h"
 
-#include <memory>   //Unique_ptr
-#include <stdexcept> //Throws
-#include <cassert>  //Asserts
-#include <iostream>   //Printing
-#include <fstream>    
+#include <cstdio>
+#include <memory>
+#include <string>
+#include <vector>
 
-//Used in harness tests. Declared and defined in main for regular build, so must be redefined here
-class StdioInput : public InputSource {
+namespace {
+
+class LinesInput : public InputSource {
 public:
+    explicit LinesInput(std::vector<std::string> lines) : lines_(std::move(lines)) {}
     std::string read_line() override {
-        std::string line;
-        std::getline(std::cin, line);
-        eof_ = std::cin.eof();
-        return line;
+        if (i_ >= lines_.size()) { eof_ = true; return ""; }
+        return lines_[i_++];
     }
     bool is_eof() const override { return eof_; }
-
 private:
+    std::vector<std::string> lines_;
+    std::size_t i_ = 0;
     bool eof_ = false;
 };
-class StdioOutput : public OutputSink {
+
+class StringOutput : public OutputSink {
 public:
-    void write(std::string_view text) override {
-        std::cout << text << std::flush;
-    }
+    std::string data;
+    void write(std::string_view t) override { data += t; }
 };
-const char* role_name(Role role) {
-    switch (role) {
-        case Role::System: return "system";
-        case Role::User: return "user";
-        case Role::Assistant: return "assistant";
-        case Role::Tool: return "tool";
+
+class FixedModel : public ModelClient {
+public:
+    using ModelClient::generate;
+    explicit FixedModel(std::string reply, std::size_t chunk = 0)
+        : reply_(std::move(reply)), chunk_(chunk) {}
+    void generate(const Conversation&, TokenSink& sink) override {
+        if (chunk_ == 0) sink.on_chunk(reply_);
+        else for (std::size_t i = 0; i < reply_.size(); i += chunk_) sink.on_chunk(reply_.substr(i, chunk_));
+        sink.on_complete();
     }
-    return "assistant";
-}
+private:
+    std::string reply_;
+    std::size_t chunk_;
+};
 
-//Test 1: Messing around with empty conversations does not result in runtime out-of-bounds errors
-void EmptyConversationBoundsAccessAttempt() {
-    Conversation EmptyConvo = Conversation();   //Initializes empty pointer
-    assert((EmptyConvo.size() == 0) && "Conversation must return 0 size if empty");
-    bool e = false;
-    try {
-        EmptyConvo.at(0);
-    } catch (const std::out_of_range& ex){
-        e = true;
+std::string scan_all(SentinelScanner& s, const std::vector<std::string>& chunks, bool* found) {
+    std::string out;
+    *found = false;
+    for (const auto& c : chunks) {
+        auto r = s.feed(c);
+        out += r.safe_text;
+        if (r.sentinel_found) { *found = true; return out; }
     }
-    assert(e && "Array out of bounds not caught");
-    assert((EmptyConvo.begin() == nullptr) && "Returns a dummy beginning of conversation");
-    assert((EmptyConvo.end() == nullptr) && "returns a dummy end of conversation");
-    std::cout << "Empty Conversation Tests Passed" << std::endl;
+    out += s.flush().safe_text;
+    return out;
 }
 
-//Test 2: Adding messages to conversations works as expected with begins, ends, and accessing elements
-//      By extension, tests whether system messages remain pinned to the front of the conversation,
-//      since the harness appends any system messages from the script to the front of the conversation by rule
-void AddingToConversation() {
-    Conversation AddingTo = Conversation();
-    Message Head = Message(Role::System, "Head");       //Simulates a regular system message in a script by being the first to be added to conversation
-    Message Middle = Message(Role::User, "Middle");
-    Message Tail = Message(Role::User, "Tail");
-    AddingTo.append(Head);
-    assert((AddingTo.begin()->content() == Head.content()) && "begin() should point to sole message");
-    AddingTo.append(Middle);
-    AddingTo.append(Tail);
-    assert((AddingTo.begin()->content() == Head.content()) && "begin() should point to first message");
-    const Message* end = AddingTo.end() - 1;    //Since end points one past the last index for transcript, real end() value is one behind
-    assert((end->content() == Tail.content()) && "end should point to most recent message");
-    assert(((AddingTo.at(1).content() == Middle.content()) && (AddingTo.at(1).role() == Middle.role())) && "Index should return message at the index");
-    bool e = false;
-    try {
-        AddingTo.at(4);
-        AddingTo.at(-1);
-    } catch (const std::out_of_range& ex){
-        e = true;
+const std::string kSent = "<|end_conversation|>";
+
+}  // namespace
+
+// ---------------------------------------------------------------- Conversation
+
+TEST(conv_empty) {
+    Conversation c;
+    CHECK(c.size() == 0);
+    CHECK(c.begin() == c.end());
+}
+
+TEST(conv_append_and_order) {
+    Conversation c;
+    c.append(Message(Role::System, "sys"));
+    for (int i = 0; i < 100; ++i) c.append(Message(Role::User, std::to_string(i)));
+    REQUIRE(c.size() == 101);
+    CHECK(c.at(0).role() == Role::System);
+    for (int i = 0; i < 100; ++i) CHECK(c.at(i + 1).content() == std::to_string(i));
+}
+
+TEST(conv_holds_tool_role) {   // P3: the new enum value must flow through
+    Conversation c;
+    c.append(Message(Role::Tool, "<|tool_result|>{}<|/tool_result|>"));
+    REQUIRE(c.size() == 1);
+    CHECK(c.at(0).role() == Role::Tool);
+}
+
+TEST(conv_range_for) {
+    Conversation c;
+    for (int i = 0; i < 10; ++i) c.append(Message(Role::User, std::to_string(i)));
+    int k = 0;
+    for (const Message& m : c) CHECK(m.content() == std::to_string(k++));
+    CHECK(k == 10);
+}
+
+TEST(conv_copy_is_deep) {
+    Conversation a;
+    for (int i = 0; i < 5; ++i) a.append(Message(Role::User, "m" + std::to_string(i)));
+    Conversation b = a;
+    REQUIRE(b.size() == a.size());
+    CHECK(a.begin() != b.begin());
+    b.append(Message(Role::User, "only in b"));
+    CHECK(a.size() == 5);
+    CHECK(b.size() == 6);
+    Conversation c;
+    c = a;
+    CHECK(c.begin() != a.begin());
+    CHECK(c.at(4).content() == "m4");
+    Conversation& alias = c;
+    c = alias;   // self-assignment must be harmless
+    CHECK(c.size() == 5);
+}
+
+TEST(conv_move_steals) {
+    Conversation a;
+    for (int i = 0; i < 5; ++i) a.append(Message(Role::User, "x"));
+    const Message* p = a.begin();
+    Conversation b = std::move(a);
+    CHECK(b.begin() == p);
+    CHECK(a.size() == 0);   // NOLINT(bugprone-use-after-move): spec requires valid+empty
+    Conversation c;
+    c.append(Message(Role::User, "old"));
+    c = std::move(b);
+    CHECK(c.begin() == p);
+    CHECK(c.size() == 5);
+    a.append(Message(Role::User, "moved-from is reusable"));
+    CHECK(a.size() == 1);
+}
+
+// ---------------------------------------------------------- SentinelScanner
+
+TEST(scan_clean_text) {
+    SentinelScanner s(kSent);
+    bool found = false;
+    CHECK(scan_all(s, {"Just ", "some text."}, &found) == "Just some text.");
+    CHECK(!found);
+}
+
+TEST(scan_every_split) {
+    const std::string text = "Goodbye." + kSent;
+    for (std::size_t split = 0; split <= text.size(); ++split) {
+        SentinelScanner s(kSent);
+        bool found = false;
+        std::string out = scan_all(s, {text.substr(0, split), text.substr(split)}, &found);
+        CHECK(found);
+        CHECK(out == "Goodbye.");
     }
-    assert(e && "Must catch Array out of bounds errors");
-    std::cout << "Basic append tests passed" << std::endl;
 }
 
-//Test 3: Copy constructors allocate different areas in memory
-void ConversationCopyConstructorAllocation() {
-    Conversation ConvoA = Conversation();
-    Message MessageA = Message(Role::User, "Find me in Conversation A");
-    Message MessageB = Message(Role::User, "Find me in Conversation A");
-    ConvoA.append(MessageA);
-    Conversation ConvoB = ConvoA;   //Copy Constructor
-    assert((ConvoB.begin() != ConvoA.begin()) && "Copy-constructed conversation does not have unique pointers");
-    
-    ConvoA.append(MessageB);
-    ConvoB = ConvoA;    //Assignment operator
-    assert((ConvoB.begin() != ConvoA.begin()) && "Assignment operation does not have unique pointers");
-    assert(((ConvoB.end()-1)->content() == MessageB.content()) && "Assignment does not actually take in new data");
-    
-    Conversation ConvoC = Conversation();
-    ConvoC.append(MessageB);
-    ConvoC.append(MessageA);
-    ConvoB = ConvoC;
-    assert((ConvoB.begin() != ConvoA.begin()) && "Assignment operator does not delete copied-over memory");
-
-    ConvoB = ConvoB;
-    assert((ConvoB.begin() != nullptr) && "Assignment operator deletes memory when copying to self");
-    std::cout << "Copy Constructor tests passed" << std::endl;
+TEST(scan_one_byte_at_a_time) {
+    const std::string text = "abc<|end_<|end_conv" + kSent + "ignored";
+    SentinelScanner s(kSent);
+    std::vector<std::string> chunks;
+    for (char ch : text) chunks.push_back(std::string(1, ch));
+    bool found = false;
+    CHECK(scan_all(s, chunks, &found) == "abc<|end_<|end_conv");
+    CHECK(found);
 }
 
-//Test 3.5: Destructor functionality
-// void ConversationDestructor() {
-//     Conversation DeleteMe = Conversation();
-//     Message DeleteMeToo = Message(Role::User, "Delete");
-//     DeleteMe.append(DeleteMeToo);
-//     const Message* deleteTest = DeleteMe.begin();
-//     DeleteMe.~Conversation();
-//     assert((deleteTest == nullptr) && "Memory not deleted");
-//     std::cout << "Destructor test passed" << std::endl;
-// }
-
-//Test 4: Move constructors
-void ConversationMoveConstructors() {
-    Conversation ConvoA = Conversation();
-    Message MessageA = Message(Role::User, "Message A");
-    ConvoA.append(MessageA);
-    const Message* beginPtr = ConvoA.begin();
-
-    Conversation ConvoB = Conversation(); 
-    ConvoB = std::move(ConvoA); //Move assignment
-
-
-    assert((ConvoB.begin() == beginPtr) && "After move assignment, does not point to right side's data");
-    assert((ConvoA.begin() == nullptr) && "After move assignment, does not unassign right side's pointers");
-   
-    Conversation ConvoC = std::move(ConvoB);
-    assert((ConvoC.begin() == beginPtr) && "After move constructor, does not point to right side's data");
-    assert((ConvoB.begin() == nullptr) && "After move constructor, does not unassign right side's pointers");
-
-
-    std::cout << "Move constructor tests passed" << std::endl;
+TEST(scan_false_alarm) {
+    SentinelScanner s(kSent);
+    bool found = false;
+    CHECK(scan_all(s, {"Here is <|end_", "world|> done"}, &found) == "Here is <|end_world|> done");
+    CHECK(!found);
 }
 
-//Test 5: Long conversations grow by doubling capacity and correctly moving everything over
-//       so that at() returns accurate messages
-void StressTestingLongConversation() {
-    Conversation LongConvo = Conversation();
-    Message Head = Message(Role::User, "Head"); //Adds a head message
-    LongConvo.append(Head);
-    for (int i = 0; i < 998; i++){     //Adds 998 more messages
-        LongConvo.append(Message(Role::Assistant, "Junk"));
+// ------------------------------------------------- Harness (no tools = P2)
+
+TEST(harness_turn_limit) {
+    LinesInput in({"a", "b", "c", "d", "e"});
+    StringOutput out;
+    HarnessConfig cfg;
+    cfg.max_turns = 2;
+    Harness h(std::make_unique<FixedModel>("reply"), cfg);
+    CHECK(h.run(in, out).kind == StopReason::Kind::TurnLimit);
+    CHECK(h.conversation().size() == 4);
+}
+
+TEST(harness_eof) {
+    LinesInput in({});
+    StringOutput out;
+    Harness h(std::make_unique<FixedModel>("reply"), HarnessConfig{});
+    CHECK(h.run(in, out).kind == StopReason::Kind::UserExit);
+}
+
+TEST(harness_sentinel_halts_and_is_hidden) {
+    LinesInput in({"hi", "again"});
+    StringOutput out;
+    Harness h(std::make_unique<FixedModel>("Bye now." + kSent, 3), HarnessConfig{});
+    CHECK(h.run(in, out).kind == StopReason::Kind::Sentinel);
+    CHECK(out.data.find("<|end_") == std::string::npos);
+    CHECK(out.data.find("Bye now.") != std::string::npos);
+}
+
+TEST(harness_transcript_round_trip) {
+    const std::string path = "p2_round_trip.txt";
+    {
+        LinesInput in({"one", "two"});
+        StringOutput out;
+        Harness h(std::make_unique<FixedModel>("same reply"), HarnessConfig{});
+        h.run(in, out);
+        REQUIRE(save_transcript(h.conversation(), path));
     }
-    Message Middle = Message(Role::User, "Middle"); 
-    LongConvo.append(Middle);           //Adds a middle-most message at the 1000th spot
-    for (int i = 0; i < 999; i++){  //Adds 999 more messages
-        LongConvo.append(Message(Role::Assistant, "Junk2"));
-    }
-    Message Tail = Message(Role::User, "Tail"); //Adds a tail message at the 2000th spot
-    LongConvo.append(Tail);
-    assert((LongConvo.size() == 2000) && "Not all messages inserted or counted right");     //Checks if all the messages were added correctly
-    assert((LongConvo.capacity() == 2048) && "Not adequately doubling in scale each time");  //Checks if the capaccity checks out. Since it starts at one and doubles each time, it should equal the nearest power of two to 2000, 2048
-    assert((LongConvo.at(1000 - 1).content() == Middle.content()) && "at() stopped working");   //Checks for at() returns at large sizes
-    assert((LongConvo.begin()->content() == Head.content()) && "Begin not pointing to head");
-    assert(((LongConvo.end()-1)->content() == Tail.content()) && "End not pointing to most recent message");
-    std::cout << "Long Convo tests passed" << std::endl;
+    ReplayModelClient replay(path);
+    Conversation empty;
+    CHECK(replay.generate(empty).content() == "same reply");
+    CHECK(replay.generate(empty).content() == "same reply");
+    std::remove(path.c_str());
 }
 
-//Test 6: Sentinel Scanner processes strings with no sentinel correctly
-void ScannerProcessesCleanText() {
-    const std::string sentinel = "<|end_conversation|>";
-    const std::string text = "This is the text testing whether or not the sentinel is able to correctly output the right message if given a fair amount of text with no sentinel.";
-    SentinelScanner scanner(sentinel);
-    
-    std::string output;
-    //Splits up message into 10 letter chunks
-    for (std::size_t i = 0; i < text.size()-1; i+=10){
-        auto out = scanner.feed(text.substr(i, 10)); //Takes one tenth of text each time
-        output.append(out.safe_text);
-    }
-    output.append(scanner.flush().safe_text);
-    // std::cout << "Input: " << text << std::endl;
-    // std::cout << "Output: " << output << std::endl;
-    assert((text == output) && "Does not identify and output all text as safe");
-    std::cout << "No Sentinel in Text test passed" << std::endl;
-}
-
-//Test 7: Sentinel Scanner finds sentinel wherever it is around the chunk boundary
-void ScannerCatchesSentinelAtEveryBoundary() {
-    const std::string sentinel = "<|end_conversation|>";
-    const std::string text = "Goodbye." + sentinel;
-    for (std::size_t split = 0; split <= text.size(); ++split){
-        SentinelScanner scanner(sentinel);
-        auto out1 = scanner.feed(text.substr(0, split));
-        auto out2 = scanner.feed(text.substr(split));
-        assert((out1.sentinel_found || out2.sentinel_found) && "sentinel must be caught regardless of split point");
-        assert((out1.safe_text + out2.safe_text == "Goodbye.") && "Safe text must reconstruct to input without sentinels");
-    }
-    std::cout << "Sentinel over boundary check passed" << std::endl;
-}
-
-//Test 8: Sentinel Scanner does not fire for partial or near sentinel matches
-void ScannerDoesntCatchFalseAlarms() {
-    const std::string sentinel = "<|end_conversing|>";
-    const std::string text = "Goodbye.<|end_conversation|>";
-    SentinelScanner scanner(sentinel);
-    auto out = scanner.feed(text);
-    std::string output = out.safe_text;
-    output.append(scanner.flush().safe_text);
-    assert((!out.sentinel_found) && "Partial sentinel matches should not be flagged");
-    assert((output == text) && "Safe text does not match input text");
-    
-    std::cout << "Partial sentinel check passed" << std::endl;
-}
-
-//Test 9: pending_ never exceeds sentinel.size() -1
-void ScannerBoundedPendingMemory(){
-    const std::string sentinel = "<|end_conversation|>";
-    const std::string text = "This is the text testing whether or not the sentinel is able to correctly output the right message if given a fair amount of text with no sentinel.";
-    SentinelScanner scanner(sentinel);
-    // std::cout << "sentinel size = " << sentinel.size() << std::endl;
-    for (std::size_t i = 0; i < text.size(); i+=3){ //Testing with a chunk size of 3
-        scanner.feed(text.substr(i,3));
-        // std::cout << "pending_size = " << scanner.pending_size() << std::endl;
-        assert((scanner.pending_size() <= (sentinel.size())) && "Pending_ should never be longer than sentinel.size() - 1");
-    }
-    std::cout << "Sentinel Scanner bounds test passed" << std::endl;
-}
-
-//Test 10: Exceeding harness turn limit ends program
-void HarnessTurnLimit(){
-    HarnessConfig config;
-    std::string script_path = "../Scripts/greeting.script";
-    config.max_turns = 2;
-    auto model = std::make_unique<ScriptedModelClient>(script_path);
-    StdioInput in;
-    StdioOutput out;
-
-    Harness harness(std::move(model), config);
-    StopReason reason = harness.run(in, out);
-
-    // std::cout << reason.detail << std::endl;
-    assert((reason.kind == StopReason::Kind::TurnLimit) && "Must stop after turn limit is reached");    //Checks that the conversation ends at the right point
-    std::cout << "Turn limit test passed" << std::endl;
-}
-
-//Test 11: Reaching sentinel immediately halts loop.
-void HarnessSentinelStop(){
-    HarnessConfig config;
-    std::string script_path = "../Scripts/p2Testing.script";
-    config.max_turns = 3;
-    auto model = std::make_unique<ScriptedModelClient>(script_path);
-    StdioInput in;
-    StdioOutput out;
-
-    Harness harness(std::move(model), config);
-    StopReason reason = harness.run(in,out);
-    assert((reason.kind == StopReason::Kind::Sentinel) && "Must stop at sentinel and terminate loop");  //Checks that the loop stops for the right reason
-
-    Conversation conv = harness.conversation();
-//    std::cout << conv.at(1).content() << std::endl;
-    assert(((conv.end()-1)->content() == "No messages past this point should be reached.<|end_conversation|>") && "Must stop exactly after sentinel is read"); //Checks that the last message in conversation ends right after sentinel
-    std::cout << "Sentinel Stop test passed" << std::endl;
-}
-
-//Test 12: Transcript playback
-void TranscriptPlayback(){
-    HarnessConfig config;
-    std::string save_path = "../tests/p2/transcriptP2Test.txt";     //Test transcript file to playback. Generated through regular operation of program
-    config.max_turns = 10;
-
-    StdioInput in1;
-    StdioOutput out1;
-    auto replayModel = std::make_unique<ReplayModelClient>(save_path);
-    Harness harness2(std::move(replayModel), config);
-
-    Conversation replay;
-    StopReason stop2 = harness2.run(in1, out1);
-    harness2.conversation();
-    std::cout << stop2.detail << std::endl;
-//    std::cout << harness.conversation().end()->content() << std::endl;
-//    std::cout << harness2.conversation().at(1).content() << std::endl;
-    
-    assert((stop2.detail == "Stop sentinel detected") && "Must stop for same reason as original transcript");
-    assert((harness2.conversation().at(1).content() == "I am doing well, thank you! How can I help you?") && "Return messags must match up");
-    assert((harness2.conversation().at(3).content() == "I can definitely do that for you. Anything else?") && "Return messags must match up");
-    assert((harness2.conversation().at(5).content() == "Goodbye!<|end_conversation|>") && "Return messags must match up");
-    std::cout << "Replay tests passed" << std::endl;
-}
-
-int main() {        //Separate main that runs all the tests for project 2
-    EmptyConversationBoundsAccessAttempt();
-    AddingToConversation();
-    ConversationCopyConstructorAllocation();
-    // ConversationDestructor();
-    ConversationMoveConstructors();
-    StressTestingLongConversation();
-    ScannerProcessesCleanText();
-    ScannerCatchesSentinelAtEveryBoundary();
-    ScannerDoesntCatchFalseAlarms();
-    ScannerBoundedPendingMemory();
-    HarnessTurnLimit();
-    HarnessSentinelStop();
-    TranscriptPlayback();
-    std::cout << "All tests passed" << std::endl;
-    return 0;
-}
+int main(int argc, char** argv) { return mt::run_all(argc, argv); }

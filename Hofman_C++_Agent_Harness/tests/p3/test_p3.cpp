@@ -124,11 +124,11 @@ TEST(reg_scaling_tests){
     CHECK(r.find("0") != nullptr);      //Checks that original tool is still in there
     CHECK(t1ptr == r.find("0"));   //Checks that reallocations don't move around memory locations
     CHECK(r.bucket_count() == 16384);   //Checks that bucket count is the nearest power of 2 to 10,000
-    std::cout << "Bucket count: " << r.bucket_count() << std::endl; //Prints out bucket count in case it isn't
+//    std::cout << "Bucket count: " << r.bucket_count() << std::endl; //Prints out bucket count in case it isn't
     CHECK(r.load_factor() <= 0.75);       //Checks load factor
-    std::cout << "Load factor: " << r.load_factor() << std::endl;  //prints exact load factor
+//    std::cout << "Load factor: " << r.load_factor() << std::endl;  //prints exact load factor
     CHECK(r.max_probe_length() <= 64);  //Checsk max probe length
-    std::cout << "Max Probe Length: " << r.max_probe_length() << std::endl;  //Prints exact max probe length
+//    std::cout << "Max Probe Length: " << r.max_probe_length() << std::endl;  //Prints exact max probe length
 }
 
 TEST(reg_alternative_hash){
@@ -143,7 +143,7 @@ TEST(reg_alternative_hash){
     weakHashTable.resize(16384);    //Resize it to the size of the other
     std::size_t longestSearch = 1;              //Longest search variable
     for (std::size_t i = 0; i < 10000; i++){
-//        std::cout << "FNV-1a: " << r.find(std::to_string(i));   //FNV-1a hash from 10000 table
+//        std::cout << "FNV-1a: " <<  r.hash(std::to_string(i)) % r.bucket_count();   //FNV-1a hash from 10000 table
         auto stringI = std::to_string(i);
         std::size_t weakIndex = stringI[0] + stringI.size();    //Weak hash
         std::size_t buckets = 16384;
@@ -174,9 +174,9 @@ TEST(reg_alternative_hash){
 //        std::cout << "      Weak Hash Function: " << weakIndex << std::endl;
     }
     CHECK(longestSearch > r.max_probe_length());    //Our hash function better be more efficient than this naive one
-    std::cout << "FNV-1a Longest chain: " << r.max_probe_length();
-    std::cout << "      Weak Hash Longest chain: " << longestSearch << std::endl;
-    std::cout << "To examine differences in hash functions more directly, uncomment lines 130 and 158 of this function" << std::endl;
+//    std::cout << "FNV-1a Longest chain: " << r.max_probe_length();
+//    std::cout << "      Weak Hash Longest chain: " << longestSearch << std::endl;
+//    std::cout << "To examine differences in hash functions more directly, uncomment lines 130 and 158 of this function" << std::endl;
 
 }
 
