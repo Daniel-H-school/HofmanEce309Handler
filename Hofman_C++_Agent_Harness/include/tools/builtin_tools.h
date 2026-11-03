@@ -7,7 +7,8 @@
 
 #include <string>
 
-// Registers read_file, write_file, list_dir, and calculator. Adding a new
+// Registers read_file, write_file, list_dir, calculator, and the final
+// project's eight tools (tools/agent_tools.h). Adding a new
 // tool to the harness means writing a new Tool subclass and adding ONE line
 // here; no existing tool's code changes.
 // Returns the number of tools successfully added.

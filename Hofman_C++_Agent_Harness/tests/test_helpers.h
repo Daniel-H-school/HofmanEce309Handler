@@ -9,10 +9,16 @@
 //   call("c1", "calculator", R"({"expression":"1+1"})")   a tool-call block
 //   result_json(msg)                   the JSON inside a <|tool_result|> message
 //   field(obj, "ok")                   obj's member "ok" (throws if missing)
+//
+// Final project:
+//   FixedPolicy p(Decision::Kind::Ask)   always answers the same; counts calls
+//   ScriptedConfirmer c({true, false})   answers Ask prompts from a list
+//   write_skill(dir, "a", "desc", {"b"}, "body")   creates dir/a/SKILL.md
 
 #pragma once
 #include "harness/harness.h"
 #include "json/json_value.h"
+#include "policy/policy.h"
 #include "tools/tool.h"
 
 #include <filesystem>
@@ -175,6 +181,49 @@ inline JsonValue result_json(const Message& m) {
         s.compare(s.size() - close.size(), close.size(), close) != 0)
         throw std::runtime_error("not a tool result: " + s);
     return parse_ok(s.substr(open.size(), s.size() - open.size() - close.size()));
+}
+
+// ---- Final project helpers ------------------------------------------------
+
+// A policy that always gives the same answer and counts how often it was asked.
+class FixedPolicy : public Policy {
+public:
+    explicit FixedPolicy(Decision::Kind k, std::string name = "fixed") : kind_(k), name_(std::move(name)) {}
+    std::string name() const override { return name_; }
+    Decision evaluate(const CommandRequest&) override {
+        ++calls;
+        return {kind_, std::string("fixed ") + to_string(kind_), name_};
+    }
+    int calls = 0;
+private:
+    Decision::Kind kind_;
+    std::string    name_;
+};
+
+// Answers confirmation prompts from a list (then "no"), recording each prompt.
+class ScriptedConfirmer : public Confirmer {
+public:
+    explicit ScriptedConfirmer(std::vector<bool> answers) : answers_(std::move(answers)) {}
+    bool confirm(const CommandRequest& req, const std::string&) override {
+        asked.push_back(req.command_line());
+        return i_ < answers_.size() ? answers_[i_++] : false;
+    }
+    std::vector<std::string> asked;
+private:
+    std::vector<bool> answers_;
+    std::size_t i_ = 0;
+};
+
+// Creates <root>/<name>/SKILL.md with the given front matter and body.
+inline void write_skill(const fs::path& root, const std::string& name, const std::string& description,
+                        const std::vector<std::string>& requires_list, const std::string& body) {
+    std::string fm = "---\nname: " + name + "\ndescription: " + description + "\n";
+    if (!requires_list.empty()) {
+        fm += "requires: [";
+        for (std::size_t i = 0; i < requires_list.size(); ++i) fm += (i ? ", " : "") + requires_list[i];
+        fm += "]\n";
+    }
+    write_text(root / name / "SKILL.md", fm + "---\n" + body + "\n");
 }
 
 }  // namespace test_helpers

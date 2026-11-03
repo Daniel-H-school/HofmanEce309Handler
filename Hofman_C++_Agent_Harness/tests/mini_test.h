@@ -15,9 +15,13 @@
 // test does not stop the other tests, and an exception escaping a test is
 // reported as a failure of that test.
 //
+// CHECK_EQ prints both sides on failure, including vectors and pairs.
+//
 // Run a subset:  ./test_p3 reg_       (runs tests whose names start with "reg_")
 // Run one test:   ./test_p3 =reg_add_and_find   (exact name)
 // List tests:     ./test_p3 --list
+// If a sanitizer (ASan/UBSan) error aborts the run, the remaining tests do not
+// run: rerun the failing test alone with  =its_name  to read its report.
 // The summary groups results by the prefix before the first '_' in each
 // test name, so name tests <area>_<what>, e.g. reg_resizes.
 
@@ -28,6 +32,8 @@
 #include <map>
 #include <sstream>
 #include <string>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace mt {
@@ -60,10 +66,49 @@ inline void report(const char* file, int line, const std::string& what) {
     std::printf("    %s:%d: failed: %s\n", file, line, what.c_str());
 }
 
+// show(): prints a value for a failed CHECK_EQ. Handles anything with
+// operator<<, plus std::vector, std::pair, strings (quoted), and enums
+// (printed as their number), so CHECK_EQ(got, want) works on vectors.
+template <typename T, typename = void>
+struct printable : std::false_type {};
+template <typename T>
+struct printable<T, std::void_t<decltype(std::declval<std::ostream&>() << std::declval<const T&>())>>
+    : std::true_type {};
+
+template <typename T> void show(std::ostream& os, const T& v);
+template <typename T> void show(std::ostream& os, const std::vector<T>& v);
+template <typename A, typename B> void show(std::ostream& os, const std::pair<A, B>& p);
+inline void show(std::ostream& os, const std::string& s) { os << '"' << s << '"'; }
+
+template <typename T> void show(std::ostream& os, const std::vector<T>& v) {
+    os << "{";
+    for (std::size_t i = 0; i < v.size(); ++i) {
+        if (i) os << ", ";
+        if (i == 20) { os << "... (" << v.size() << " items)"; break; }
+        show(os, v[i]);
+    }
+    os << "}";
+}
+template <typename A, typename B> void show(std::ostream& os, const std::pair<A, B>& p) {
+    os << "(";
+    show(os, p.first);
+    os << ", ";
+    show(os, p.second);
+    os << ")";
+}
+template <typename T> void show(std::ostream& os, const T& v) {
+    if constexpr (std::is_enum_v<T>) os << static_cast<long long>(v);
+    else if constexpr (printable<T>::value) os << v;
+    else os << "(value not printable)";
+}
+
 template <typename A, typename B>
 std::string describe_eq(const char* ea, const char* eb, const A& a, const B& b) {
     std::ostringstream os;
-    os << ea << " == " << eb << "\n        left:  " << a << "\n        right: " << b;
+    os << ea << " == " << eb << "\n        left:  ";
+    show(os, a);
+    os << "\n        right: ";
+    show(os, b);
     return os.str();
 }
 

@@ -1,13 +1,15 @@
 // include/tools/tool.h
 //
 // PROVIDED. The interface every tool implements, the result type every tool
-// returns, and the context every tool receives.
+// returns, and the context every tool receives. (Final project: ToolContext
+// gained the memory / skills / policy pointers.)
 
 #pragma once
 #include "json/json_value.h"
 #include "tools/workspace.h"
 
 #include <cstddef>
+#include <filesystem>
 #include <string>
 #include <utility>
 
@@ -33,12 +35,27 @@ struct ToolResult {
     }
 };
 
+class MemoryStore;
+class SkillCatalog;
+class Policy;
+class Confirmer;
+class AuditLog;
+
 // Everything a tool is allowed to touch is passed in here — no globals.
+// The final-project pointers are NOT owned; a null pointer means that feature
+// is switched off, and its tools answer with an error.
 struct ToolContext {
     explicit ToolContext(Workspace ws) : workspace(std::move(ws)) {}
 
     Workspace   workspace;
     std::size_t max_read_bytes = 64 * 1024;   // hard cap for read_file
+
+    MemoryStore*          memory = nullptr;      // remember / recall / forget / list_memories
+    std::filesystem::path memory_file;           // if set, saved after every change
+    SkillCatalog*         skills = nullptr;      // list_skills / load_skill / skill_dependents
+    Policy*               policy = nullptr;      // run_command
+    Confirmer*            confirmer = nullptr;   // answers Ask decisions (null: Ask = deny)
+    AuditLog*             audit = nullptr;       // run_command decisions
 };
 
 class Tool {
