@@ -43,11 +43,34 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <random>
 
 // =========================================================================
 // Memory — 4 examples
 // =========================================================================
 
+//Tests functionality with rare empty heap cases. Makes sure program doesn't crash
+TEST(heap_empty_operations){
+    MinHeap<int> h;
+    CHECK_EQ(h.size(),std::size_t{0});  //Checks that size is zero
+    CHECK_EQ(h.empty(), true);          //Checks taht the heap recognizes itself as empty
+    int errorCatch = 0;
+    try {
+        h.top();    //Checks that you can't access elements of an empty heap
+    } catch (const std::exception& e) {
+        std::string error = e.what();
+        if (error.compare("Attempted Access of Empty Minheap") == 0)       
+        errorCatch++;   //Increments a flag variable
+    }
+    try {
+        h.pop();
+    } catch (const std::exception& e){
+        std::string error = e.what();
+        if (error.compare("Attempted Access of Empty Minheap") == 0) 
+        errorCatch += 2;
+    }
+    CHECK_EQ(errorCatch, 3);    //Checks that both accessing out of bounds errors were caught
+}
 // Example 1 (heap): items come back smallest first, duplicates included.
 TEST(heap_pops_in_order) {
     MinHeap<int> h;
@@ -57,6 +80,93 @@ TEST(heap_pops_in_order) {
     std::vector<int> got;
     while (!h.empty()) got.push_back(h.pop());
     CHECK_EQ(got, (std::vector<int>{1, 1, 3, 4, 5}));
+}
+
+TEST(heap_clear_and_manual_empty){
+    MinHeap<int> h;
+    for (int i = 0; i < 100; i++){  //Adds a hundred things to the heap
+        h.push(i);
+    }
+
+    while (!h.empty()){ //Pops everything to test emptiness
+        h.pop();
+    }
+    CHECK_EQ(h.empty(), true);  //Double checks that it is empty
+    int errFlag = 0;
+    try {
+        h.top();
+    } catch (const std::exception& e){
+        std::string error = e.what();
+        if (error.compare("Attempted Access of Empty Minheap") == 0)
+        errFlag++;
+    }
+    CHECK_EQ(h.size(), std::size_t{0});  //Checks the size function
+    CHECK_EQ(errFlag, 1);   //Checks that an emptied still counts as empty, as before
+
+    for (int i = 0; i < 100; i++){  //Pushes another 100 objects to the heap
+        h.push(i);
+    }
+    h.clear();  //Tries the clear function
+    CHECK_EQ(h.size(), std::size_t{0});      //Checks that size is 0
+    CHECK_EQ(h.empty(), true);  //Checks that heap is empty
+}
+
+//Boundary conditions for top_k function
+TEST(heap_top_k_empty_edge_cases){
+    std::vector<int> v;
+    std::vector<int> empty = top_k(v,10);
+    std::vector<int> emptyCheck = {};
+    CHECK_EQ(empty, emptyCheck);
+    empty = top_k(v,0);
+    CHECK_EQ(empty, emptyCheck);
+    for (int i = 0; i < 10; i++){
+        v.push_back(i);
+    }
+    empty = top_k(v,0);
+    CHECK_EQ(empty, emptyCheck);
+}
+
+//Expected top_k behavior
+TEST(heap_top_k_Expected_small_result){
+    std::vector<int> v;
+    for (int x : {5,16,9,17,351,32,1512,523,61,32,4,61,9,9,0,1231}) {
+        v.push_back(x); 
+    }
+    std::vector<int> smallCheck = top_k(v,5);
+    std::vector<int> largeCheck = top_k(v,12);
+    std::vector<int> overSizedCheck = top_k(v,100);
+    CHECK_EQ(smallCheck, (std::vector<int>{1512,1231,523,351,61}));
+    CHECK_EQ(largeCheck, (std::vector<int>{1512,1231,523,351,61,61,32,32,17,16,9,9}));
+    CHECK_EQ(overSizedCheck, (std::vector<int>{1512,1231,523,351,61,61,32,32,17,16,9,9,9,5,4,0}));
+}
+
+//Comparison with built-in sort function in time and use
+TEST(heap_large_scale_sort_comparison){
+    std::vector<int> v;
+    for (int i = 0; i < 10000; i++){    //10,000 entries
+        v.push_back(std::rand());   //Inserts a random number to the end
+    }
+    SteadyClock clock;  //Creates a steady clock for printing out time lengths
+    double startK = clock.now_seconds();
+    std::vector<int> topTenK = top_k(v,10);    //Takes top 10 items
+    double endK = clock.now_seconds();
+    double kTime = endK - startK;
+
+    double startSort = clock.now_seconds();
+    std::sort(v.begin(), v.end());
+    double endSort = clock.now_seconds();
+    double sortTime = endSort - startSort;
+
+    std::cout << "std::sort time: " << sortTime << "s" << std::endl;
+    std::cout << "top_k time: " << kTime << "s" << std::endl;
+    CHECK_EQ(kTime < sortTime, true);   //Checks that top_k function is faster than sort
+    
+    std::vector<int> topTen;
+    for (std::size_t i = v.size() - 1; i >= v.size() - 10; i--){
+        topTen.push_back(v[i]); //Pushes back the top 10 indeces for the sorted array
+    }
+
+    CHECK_EQ(topTen, topTenK);  //Checks that both sorts correctly sort the data
 }
 
 // Example 2 (lru): the least recently USED entry is evicted, and get()

@@ -111,7 +111,7 @@ public:
             //After sifted down fully
             return popped;  //Return the popped value
         } else {    //If an empty heap
-            throw std::out_of_range("Attempted Access of Empty MinHeap");
+            throw std::out_of_range("Attempted Access of Empty Minheap");
         }
     }
 
@@ -157,6 +157,9 @@ std::vector<T> top_k(const std::vector<T>& items, std::size_t k, Less less = Les
 
     if (k == 0 || items.empty()){   //If given no items or told not to include any items
         return {};  //Returns empty vector early
+    } else if (k >= items.size()){   //If k value is larger than the size of the heap
+
+        k = items.size();   //Take the whole list
     }
 
     MinHeap<T, Less> processHeap;        //Initializes a minHeap with the current type and comparison method
@@ -173,13 +176,14 @@ std::vector<T> top_k(const std::vector<T>& items, std::size_t k, Less less = Les
 
     //After the k-most items have been processed
     std::vector<T> outputVector;    //Initializes a vector to hold the output
+    outputVector.resize(k);         //Sizes it to correct size
     for (std::size_t i = k; i > 0; i--){    //For k items (processheap may hold more than k items)
         outputVector[i - 1] = processHeap.pop();     //Pop the smallest item into the output vector, starting at the smallest and building towards the largest
         //The largest vlaue is at index zero
     }
 
     //Because of the structure of minHeaps, the two children of a node may not be in order, so has to go through and swap conflicting ones
-    for (std::size_t i = 1; i < k; i+=2){   //Starts at index 1 and iterates by two to compare two children at a time
+    for (std::size_t i = 1; i < (k - 1); i+=2){   //Starts at index 1 and iterates by two to compare two children at a time
         if (i + 1 > k) break;   //Fringe out of array check. Will be at the end of the vector and means there is an unpaired child which doesn't need swapping anyway
         else if (less(outputVector[i],outputVector[i + 1])){    //If left child is larger than right child
             T temp = outputVector[i];               //Swap
