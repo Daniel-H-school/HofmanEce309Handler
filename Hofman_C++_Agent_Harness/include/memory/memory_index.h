@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <iostream>
 
 struct MemoryRecord {
     std::uint64_t id = 0;     // unique key; shown to the model as "m<id>"
@@ -80,6 +81,77 @@ private:
         Node*        left = nullptr;
         Node*        right = nullptr;
     };
+
+    //recursive helper for the height function
+    static std::size_t height_of(Node* n){
+        if (n == nullptr){
+            return 0;
+        }
+
+        if (height_of(n->left) > height_of(n->right)){
+            return 1 + height_of(n->left);
+        } else {
+            return 1 + height_of(n->right);
+        }
+    }
+
+    //iterative helper for the in_order function (recursive function caused stack overfloww)
+    static void in_order(const Node* n, const std::function<void(const MemoryRecord&)>& fn){
+        std::cout << "Calling in_order function" << std::endl;
+        if (n == nullptr) return;
+        std::cout << "Not given null start" << std::endl;
+
+        std::vector<const Node*> fakeStack;   //Order vector that places nodes in order iteratively 
+        const Node* curNode = n;
+    
+        while (!fakeStack.empty() || curNode != nullptr){     //Stack based iteration (the or covers the root case)
+            while (curNode != nullptr){ //Travel all the way left until you can't
+                std::cout << curNode << std::endl;
+                fakeStack.push_back(curNode);   //Push to stack
+                curNode = curNode->left;        //Travel left
+            }
+            //Now, curNode is as far left as it can be (nullptr), so get the node from the stack
+            curNode = fakeStack.back();
+            fakeStack.pop_back();
+            std::cout << "function applied to " << curNode << std::endl;
+            fn(curNode->rec);   //Perform the function on this node
+
+            curNode = curNode->right;   //Go to right subtree and repeat
+                                        //when this eventually reaches a nullptr itself (leaf), it will pop back up one layer to the parent
+                                        //When the parent is the root, fakeStack will be empty and the while loop closes
+        }
+
+        // in_order(n->left, fn);  //Does left side
+        // fn(n->rec);             //Applies function to memory rec of this node
+        // in_order(n->right, fn); //Goes through right side     
+
+    }
+
+    //Iterative helper for the clear function. Post_order traaversal to delete every node
+    //RENAME BEFORE FINAL; IS NO LONGER POST_ORDER
+    void post_order_destroy(Node* n){
+        if (n == nullptr) return;
+
+        std::vector<Node*> fakeStack;
+        fakeStack.push_back(n);
+
+        //Uses pseudo breadth-first approach to stack all children of a node onto the stack before deletion
+        while (!fakeStack.empty()){
+            //Pops the top of stack. things are not restacked if deleted, so this should process everything
+            Node* curNode = fakeStack.back();
+            fakeStack.pop_back();
+
+            //Pushes children of currentNode, if any
+            if (curNode->left != nullptr){
+                fakeStack.push_back(curNode->left);
+            }
+            if (curNode->right != nullptr){
+                fakeStack.push_back(curNode->right);
+            }
+
+            delete curNode;
+        }
+    }
 
     Node*       root_ = nullptr;
     std::size_t count_ = 0;
