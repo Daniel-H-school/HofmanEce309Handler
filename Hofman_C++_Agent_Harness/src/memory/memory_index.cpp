@@ -90,6 +90,19 @@ bool MemoryIndex::remove(std::uint64_t id) {
     if (prevNode == nullptr){    //Special case for deleting root_
         Node* succ = curNode->right;
         Node* prevSucc = nullptr;
+        if (succ == nullptr){   //If no successor (only has a left child, or none)
+            if (curNode->left == nullptr){  //If root is only node
+                delete curNode;
+                root_ = nullptr;
+                count_--;
+                return true;     //Return early
+            } else {
+                root_ = curNode->left;  //Resets root_
+                count_--;
+                delete curNode;
+                return true;     //Return early
+            }
+        }
         while (succ->left != nullptr){  //traverses down
             prevSucc = succ;
             succ = succ->left;

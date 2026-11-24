@@ -169,6 +169,51 @@ TEST(heap_large_scale_sort_comparison){
     CHECK_EQ(topTen, topTenK);  //Checks that both sorts correctly sort the data
 }
 
+TEST(lru_empty_cases){
+    LruCache<std::string, int> c(0);
+    c.put("DON'T PUT ME", 12);
+    CHECK_EQ(c.contains("DON'T PUT ME"), false); //Should not contain this value since capacity is zero
+    CHECK_EQ(c.size(), std::size_t{0});      //Should be empty
+    CHECK_EQ(c.capacity(), std::size_t{0});  //Should have no capacity
+    CHECK_EQ(c.get("can't find"), nullptr); //Should safely return nullptr before looking
+    CHECK_EQ(c.erase(std::string{"n"}), false);  //Shouldn't be able to erase nonexistant data
+    CHECK_EQ(c.keys_mru_to_lru(), std::vector<std::string>{});    //Should return an empty vector if using this function
+    c.~LruCache();   //Destructor should run smoothly
+
+    LruCache<std::string, int> almostEmpty(1);  //Capacity of one cache to test remove cases with one capacity
+    almostEmpty.put("Put Me!", 1);
+    CHECK_EQ(almostEmpty.erase("Put Me!"), true);  //Should successfully erase this
+    CHECK_EQ(almostEmpty.size(), std::size_t{0});      //Size should now be 0
+    CHECK_EQ(almostEmpty.keys_mru_to_lru(), std::vector<std::string>{});    //Should return an empty vector if using this function
+}
+
+TEST(lru_put_on_existing_key){
+    LruCache<std::string, int> c(4);
+    c.put("a",1);
+    c.put("b",2);
+    c.put("b",3);
+    c.put("b",4);
+    REQUIRE(c.size()==2);   //Checks proper size
+    CHECK_EQ(*c.get("b"),4);    //Checks that the value gets overridden
+    CHECK_EQ(c.stats().evictions,std::size_t{0});    //Nothing should be evicted
+    CHECK_EQ(c.stats().hits,std::size_t{1});         //Should only register one hit with the get function
+}
+
+TEST(lru_stats){
+    LruCache<std::string, int> c(5);
+    c.put("a",1); c.put("b",2); c.put("c",3); c.put("d",4); c.put("e",5);   //Put 5 keys in the cache
+    c.put("NEW",10);    //Should evict the least used ("a")
+    c.put("b",100);     //Should not evict the duplicate key
+    c.get("a");         //Should miss, as a has been evicted
+    c.get("NEW");       //Should hit
+    c.put("NEW2",90);   //Should evict the new least used ("c")
+    c.get("c");         //Should miss
+    c.get("d");         //Should hit
+    CHECK_EQ(c.stats().evictions, std::size_t{2});
+    CHECK_EQ(c.stats().misses,std::size_t{2});
+    CHECK_EQ(c.stats().hits,std::size_t{2});
+}
+
 // Example 2 (lru): the least recently USED entry is evicted, and get()
 // counts as a use.
 TEST(lru_evicts_least_recently_used) {
@@ -181,6 +226,80 @@ TEST(lru_evicts_least_recently_used) {
     CHECK(!c.contains("b"));
     CHECK_EQ(c.keys_mru_to_lru(), (std::vector<std::string>{"c", "a"}));
     CHECK_EQ(c.stats().evictions, std::size_t{1});
+}
+
+TEST(lru_get_refreshes_recency){
+    LruCache<std::string, int> c(10);
+    for (int i = 0; i < 10; i++){           //Puts ten items in the cache, a-j
+        c.put(std::to_string(i),i);
+    }
+    CHECK_EQ(c.keys_mru_to_lru(),(std::vector<std::string>{"9","8","7","6","5","4","3","2","1","0"}));  //Checks that insertion puts at most recently used position
+    c.get("1");
+    c.get("3");
+    c.get("4");
+    CHECK_EQ(c.keys_mru_to_lru(),(std::vector<std::string>{"4","3","1","9","8","7","6","5","2","0"}));  //Checks proper reordering
+}
+
+TEST(lru_erasing){
+    LruCache<std::string, int> c(5);
+    c.put("tail",1); c.put("b",2); c.put("c",3); c.put("d",4); c.put("head",5);   //Put 5 keys in the cache
+    c.erase("head");    //Erases head
+    REQUIRE(c.size() == 4);
+    CHECK_EQ(c.keys_mru_to_lru(),(std::vector<std::string>{"d","c","b","tail"}));
+    c.erase("tail");    //Erases tail
+    REQUIRE(c.size() == 3);
+    CHECK_EQ(c.keys_mru_to_lru(),(std::vector<std::string>{"d","c","b"}));
+    c.erase("c");       //Erases something in the middle
+    REQUIRE(c.size() == 2);
+    CHECK_EQ(c.keys_mru_to_lru(),(std::vector<std::string>{"d","b"}));
+    //Erasing near-empty values covered earlier
+}
+
+//Test for niche empty cases
+TEST(bst_empty_cases){
+    MemoryIndex t;
+    CHECK_EQ(t.find(0),nullptr);    //Checks return type of find with empty bst
+    CHECK_EQ(t.remove(0),false);    //Checks correct return type of remove with empty bst
+    CHECK_EQ(t.size(), std::size_t{0});          //Checks size = 0
+    CHECK_EQ(t.height(), std::size_t{0});        //Checks max height = 0
+    std::vector<std::uint64_t> ids;
+    t.for_each_in_order([&](const MemoryRecord& r) {ids.push_back(r.id);});
+    t.clear();                                                  //Checks that clear function doesn't crash
+}
+
+//Tests removals of leafs (except for root)
+TEST(bst_remove_leaf){
+    MemoryIndex t;
+    for (std::uint64_t id : {10,5,15,12,17}) REQUIRE(t.insert(MemoryRecord{id, "m" + std::to_string(id)})); //Insert several nodes
+    t.remove(5);
+    //vector of ids for comparison
+    std::vector<std::uint64_t> ids;
+    t.for_each_in_order([&](const MemoryRecord& r) {ids.push_back(r.id);});
+    CHECK_EQ(ids, (std::vector<std::uint64_t>{10,12,15,17}));   //Check removal of leaf
+    t.remove(12);   
+    ids.clear();
+    t.for_each_in_order([&](const MemoryRecord& r) {ids.push_back(r.id);});
+    CHECK_EQ(ids, (std::vector<std::uint64_t>{10,15,17}));      //Check removal of leaf
+    CHECK_EQ(t.size(),std::size_t{3});   //Check size after removals
+}
+
+//Tests removal logic for one child cases, excluding root
+TEST(bst_remove_one_child){
+    MemoryIndex t;
+    for (std::uint64_t id : {25,12,8,6,18,13,30,26,27,32,39}) REQUIRE(t.insert(MemoryRecord{id, "m" + std::to_string(id)}));    //Inserts several nodes
+    //Creates 4 separate one child cases:
+    //  8,6 is ll
+    //  18,13 is rl
+    //  26,27 is lr
+    //  32,39 is rr
+    t.remove(8);
+    t.remove(18);
+    t.remove(26);
+    t.remove(32);
+    std::vector<std::uint64_t> ids;
+    t.for_each_in_order([&](const MemoryRecord& r) {ids.push_back(r.id);});
+    CHECK_EQ(ids, (std::vector<std::uint64_t>{6,12,13,25,27,30,39}));   //Check shape after removals
+    CHECK_EQ(t.size(),std::size_t{7});   //Check size after removals
 }
 
 // Example 3 (bst): removing a node with two children keeps the tree sorted,
@@ -198,6 +317,85 @@ TEST(bst_remove_two_children) {
     CHECK_EQ(t.size(), std::size_t{4});
 }
 
+//Tests removal logic for removing the root node, both with and without a deeper tree
+TEST(bst_remove_root){
+    MemoryIndex t;
+    t.insert(MemoryRecord{1,"1"});  //Inserts a root and nothing else
+    t.remove(1);    //Remove the sole node which is the root
+    std::vector<std::uint64_t> ids;
+    t.for_each_in_order([&](const MemoryRecord& r) { ids.push_back(r.id); });
+    CHECK_EQ(ids, (std::vector<std::uint64_t>{}));  //Checks that ids is empty
+    CHECK_EQ(t.size(), std::size_t{0});  //Checks that size is empty
+
+    //Inserts nodes for a left one child case at root
+    for (std::uint64_t id : {50, 30, 20, 33}) REQUIRE(t.insert(MemoryRecord{id, "m" + std::to_string(id)}));
+    t.remove(50);
+    ids.clear();
+    t.for_each_in_order([&](const MemoryRecord& r) { ids.push_back(r.id); });
+    CHECK_EQ(ids, (std::vector<std::uint64_t>{20,30,33}));  //Check root was removed correctly
+    CHECK_EQ(t.size(), std::size_t{3});  //Check size
+
+    //Inserts nodes for a right one child case at root
+    t.clear();
+    for (std::uint64_t id : {50, 60, 55, 65}) REQUIRE(t.insert(MemoryRecord{id, "m" + std::to_string(id)}));
+    t.remove(50);
+    ids.clear();
+    t.for_each_in_order([&](const MemoryRecord& r) { ids.push_back(r.id); });
+    CHECK_EQ(ids, (std::vector<std::uint64_t>{55,60,65}));  //Check root was removed correctly
+    CHECK_EQ(t.size(), std::size_t{3});  //Checks size
+
+    //Inserts nodes for a two child case with successor logic
+    t.clear();
+    for (std::uint64_t id : {50, 40, 60, 55, 65}) REQUIRE(t.insert(MemoryRecord{id, "m" + std::to_string(id)}));
+    t.remove(50);
+    ids.clear();
+    t.for_each_in_order([&](const MemoryRecord& r) { ids.push_back(r.id); });
+    CHECK_EQ(ids, (std::vector<std::uint64_t>{40,55,60,65}));   //Check root was removed correctly
+    CHECK_EQ(t.size(), std::size_t{4});
+}
+
+//Tests height with known resultss
+TEST(bst_height_determined){
+    MemoryIndex t;
+    for (std::uint64_t id : {25,12,6,9,8,7,30,27,32,31,45,44,50}) REQUIRE(t.insert(MemoryRecord{id, "m" + std::to_string(id)}));
+    //Correct height from 25->12->6->9->8->7 = 6
+    CHECK_EQ(t.height(),std::size_t{6}); //Checks correct height
+
+    t.remove(9);    //Removes two nodes from left side to make right side taller
+    t.remove(8);
+    CHECK_EQ(t.height(),std::size_t{5}); //Checks correct height from right path
+}
+
+//Prints height for random and unbalanced trees
+TEST(bst_height_comparison){
+    MemoryIndex t;
+    MemoryIndex t2;
+    for (std::uint64_t i = 0; i < 1000; i++){
+        REQUIRE(t.insert(MemoryRecord{i, std::to_string(i)}));  //Insert sequentially
+        REQUIRE(t2.insert(MemoryRecord{(std::uint64_t) std::rand(), std::to_string(i)}));    //Insert random values
+    }    
+    CHECK_EQ(t.size(), std::size_t{1000});  //Checks both sizes are 1000
+    CHECK_EQ(t.size(), std::size_t{1000});  
+    std::cout << "Height unbalanced: " << t.height() << std::endl;
+    std::cout << "Height random: " << t2.height() << std::endl;
+}
+
+//Checks memory select_context for empty context vectors, empty budgets, and empty keeps
+TEST(ctx_empty_cases) {
+    std::vector<ContextItem> emptyVector;
+    ContextPlan p = select_context(emptyVector,10,10);
+    CHECK_EQ(p.keep, std::vector<std::size_t>{});       //Checks empty vector
+    CHECK_EQ(p.total_tokens, std::size_t{0});           //Checks lack of total tokens
+    CHECK_EQ(p.over_budget, false);                     //Checks that isn't over budget
+
+    emptyVector.push_back({Role::Assistant,10,false});
+    //Empty vector now has one item
+    ContextPlan p2 = select_context(emptyVector,0,0);   //Since budget is zero, and nothing is marked to be kept, should be an empty context plan
+    CHECK_EQ(p.keep, std::vector<std::size_t>{});       //Checks that nothing is kept
+    CHECK_EQ(p.total_tokens, std::size_t{0});           //Checks lack of total tokens
+    CHECK_EQ(p.over_budget, false);                     //Checks that it stays under budget
+}
+
 // Example 4 (ctx): the worked example in spec §4.4.
 TEST(ctx_spec_example) {
     std::vector<ContextItem> items{
@@ -213,6 +411,102 @@ TEST(ctx_spec_example) {
     CHECK_EQ(p.keep, (std::vector<std::size_t>{0, 1, 4, 6, 7}));
     CHECK_EQ(p.total_tokens, std::size_t{50});
     CHECK(!p.over_budget);
+}
+
+//Test for a few shortcuts regarding all tokens being under budget and all tokens being considered recent
+TEST(ctx_shortcuts){
+    std::vector<ContextItem> items {
+        {Role::System, 10, false},
+        {Role::User, 10, false},
+        {Role::Assistant, 10, false}};
+    ContextPlan p1 = select_context(items,40,0);    //When total budget is greater than total tokens
+    ContextPlan p2 = select_context(items,30,0);    //When total budget is equal to total tokens
+    ContextPlan p3 = select_context(items,0,4);     //When more than all items are considered recent
+    ContextPlan p4 = select_context(items,0,3);     //When exactly all items are considered recent 
+    ContextPlan p5 = select_context(items,30,3);    //When multiple cases are true
+    
+    CHECK_EQ(p1.keep, (std::vector<std::size_t>{0,1,2}));   //Checks that all vectors successfully added everything
+    CHECK_EQ(p2.keep, (std::vector<std::size_t>{0,1,2}));
+    CHECK_EQ(p3.keep, (std::vector<std::size_t>{0,1,2}));
+    CHECK_EQ(p4.keep, (std::vector<std::size_t>{0,1,2}));
+    CHECK_EQ(p5.keep, (std::vector<std::size_t>{0,1,2}));
+
+    CHECK_EQ(p1.total_tokens, std::size_t{30}); //Checks all of the sizes
+    CHECK_EQ(p2.total_tokens, std::size_t{30});
+    CHECK_EQ(p3.total_tokens, std::size_t{30});
+    CHECK_EQ(p4.total_tokens, std::size_t{30});
+    CHECK_EQ(p5.total_tokens, std::size_t{30});
+
+    CHECK(!p1.over_budget); //Shouldn't be over budget
+    CHECK(!p2.over_budget); //Shouldn't be over budget
+    CHECK(p3.over_budget);  //Should be over budget
+    CHECK(p4.over_budget);  //Should be over budget
+    CHECK(!p5.over_budget); //Shouldn't be over budget
+}
+
+//Tests ctx budget works with multiple token sizes
+TEST(ctx_budget_multiple_tokens){
+    std::vector<ContextItem> items {
+        {Role::System, 5, false},
+        {Role::User, 10, false},
+        {Role::Assistant, 15, false},
+        {Role::User, 20, false},
+        {Role::Assistant, 25, false}    //Total tokens = 75
+    };
+    ContextPlan p1 = select_context(items,70,10);   //Should select all items and be over budget
+    ContextPlan p2 = select_context(items,75,10);   //Should select all items and be exactly on budget
+    ContextPlan p3 = select_context(items,50,1);    //Should be able to stay under budget through selection process
+    ContextPlan p4 = select_context(items,49,1);    //Should be able to stay under budget by making a sacrifice in what to take
+
+    CHECK(p1.over_budget);      //Checks that p1 is correctly over budget
+    CHECK(!p2.over_budget);     //Checks that p2 is correctly under budget
+    CHECK(!p3.over_budget);
+    CHECK(!p4.over_budget);
+
+    CHECK_EQ(p3.total_tokens, std::size_t{50}); //75 (total) - 15 = 60 - 10 = 50 
+    CHECK_EQ(p4.total_tokens, std::size_t{30}); //75 (total) - 15 = 60 - 10 = 50 - 20 = 30
+}
+
+//Tests ctx keeps expected order
+TEST(ctx_survival_order){
+    std::vector<ContextItem> items {
+        {Role::System, 10, false},      //System message -> kept
+        {Role::User, 10, false},        //Less recent than other user -> lost
+        {Role::Assistant, 10, false},   //Next least important message ->lost
+        {Role::User, 10, false},        //More recent -> kept
+        {Role::Assistant, 10, true},    //Pinned message -> kept
+        {Role::Tool, 10, false},        //Least important message -> lost
+        {Role::User,10,false},          //Most recent 2 -> kept
+        {Role::Assistant,10,false}      //Most recent 2 -> kept
+    };
+    ContextPlan p = select_context(items,50,2); //Should select according to top logic
+    CHECK_EQ(p.keep, (std::vector<std::size_t>{0,3,4,6,7}));  //Keeps as expected
+    CHECK_EQ(p.total_tokens, std::size_t{50});  //Should have this many tokens
+    CHECK(!p.over_budget);  //Should be on budget
+}
+
+//Tests Over budget for complicated removal setup
+TEST(ctx_over_budget){
+    std::vector<ContextItem> items {
+        {Role::System, 10, false},      //System message -> kept
+        {Role::User, 10, false},        //Less recent than other user -> lost
+        {Role::Assistant, 10, false},   //Next least important message ->lost
+        {Role::User, 10, false},        //More recent -> kept
+        {Role::Assistant, 10, true},    //Pinned message -> kept
+        {Role::Tool, 10, false},        //Least important message -> lost
+        {Role::User,10,false},          //Most recent 2 -> kept
+        {Role::Assistant,10,false}      //Most recent 2 -> kept
+    };    
+    ContextPlan p1 = select_context(items, 30, 3);  //Should overburden the budget with too much recency
+    ContextPlan p2 = select_context(items, 10, 0);  //Should overburden the budget with system and pinned messages
+
+    CHECK_EQ(p1.keep, (std::vector<std::size_t>{0,4,5,6,7}));   //Should keep all these
+    CHECK_EQ(p1.total_tokens, std::size_t{50}); //Checks correct number of tokens
+    CHECK(p1.over_budget);  //Should be over budget
+
+    CHECK_EQ(p2.keep, (std::vector<std::size_t>{0,4}));    //Should only keep system and pinned messages
+    CHECK_EQ(p2.total_tokens, std::size_t{20});
+    CHECK(p2.over_budget);  //Should be over budget
 }
 
 // =========================================================================

@@ -58,12 +58,10 @@ public:
         auto it = map_.find(key);
         if (it == map_.end()){   //Checks if the desired key is even in the hash
             stats_.misses++;        //Increments misses
-            std::cout << "Map at this key: " << map_.at(key)->key << " " << map_.at(key)->value << std::endl;
             return nullptr;         //Returns nullptr early
         }
         move_to_front(map_.at(key));    //moves this address to front (helper function)
         stats_.hits++;      //Increments hits stat
-        std::cout << &(map_.at(key)->value) << std::endl;
         return &(map_.at(key)->value);  //Returns a pointer to the value of the node at that location
     }
 
@@ -91,7 +89,6 @@ public:
 
                 delete oldTail; //Frees the memory of this now unused Node
                 stats_.evictions++; //Increments evictions
-            
             } else {
                 push_front(newNode);    //Pushes the new node to front
                 map_[key] = newNode;   //place the new node in map
@@ -100,6 +97,7 @@ public:
             Node* valAddr = map_.at(key);  //Get the address of the value at the key
             valAddr->value = value;  //Set the Value of that key to be the new value
             move_to_front(valAddr); //Moves the node to the front (most recently used)
+            delete newNode;         //Delete the memory associated with the node which wasn't created
         }
     }
 
@@ -118,11 +116,12 @@ public:
 
     // Removes the key if present (not an eviction). Returns whether it was.
     bool erase(const Key& key) {
-        if (map_.find(key) == map_.end()){  //if the key is not cached
+        if (map_.empty() || (map_.find(key) == map_.end())){  //if the key is not cached OR if map has no items in it to delete
             return false;
         } else {    //if the key is cached and needs to be erased
-            Node* toDelete = map_.find(key);
+            Node* toDelete = map_.at(key);
             unlink(toDelete);   //Unlink this node
+            map_.erase(toDelete->key);  //Erase from hash
             delete toDelete;    //Free this node's data
             return true;
         }

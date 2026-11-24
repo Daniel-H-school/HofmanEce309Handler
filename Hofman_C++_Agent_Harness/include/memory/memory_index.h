@@ -87,43 +87,64 @@ private:
         if (n == nullptr){
             return 0;
         }
+        struct stack {
+            Node* node;
+            std::size_t nodeHeight;
+        };
+        std::vector<stack> fakeStack;   //Vector that imitates a runtime stack for iterative recursion
+        Node* curNode = n;
+        std::size_t curNodeHeight = 1;
+        std::size_t height = 1;
+        std::size_t maxHeight = 1;
+        while (!fakeStack.empty() || curNode != nullptr){ //While there are nodes to process
+            while (curNode != nullptr){     //travel all the waay left on this subchild
+                fakeStack.push_back({curNode,height});
+                //Different counting logic
+                if (curNode->left != nullptr) {
+                    height = curNodeHeight + 1;       //Increments height for traveling down this subpath
+                    curNodeHeight++;
+                } 
+                curNode = curNode->left;    
+                if (height > maxHeight) maxHeight = height; //Updates when a higher height value is found
+            }
+            curNode = fakeStack.back().node;     //Similar logic to in_order function. Pops off the stack to investigate child/right subpath
+            height = fakeStack.back().nodeHeight;   //Gets height when traversing back
+            fakeStack.pop_back();
 
-        if (height_of(n->left) > height_of(n->right)){
-            return 1 + height_of(n->left);
-        } else {
-            return 1 + height_of(n->right);
+            if (curNode->left == nullptr && curNode->right == nullptr) {
+            }
+            curNode = curNode->right;
+            if (curNode != nullptr) {
+                height++;   //increases height again when moving right successfully
+                curNodeHeight = height;
+            } 
+            if (height > maxHeight) maxHeight = height; //Updates when a higher height value is found
         }
+        return maxHeight;   //Max height consistently overestimates by one because of starting at root instead of leaf, so this corrects for it
+
     }
 
     //iterative helper for the in_order function (recursive function caused stack overfloww)
     static void in_order(const Node* n, const std::function<void(const MemoryRecord&)>& fn){
-        std::cout << "Calling in_order function" << std::endl;
         if (n == nullptr) return;
-        std::cout << "Not given null start" << std::endl;
 
         std::vector<const Node*> fakeStack;   //Order vector that places nodes in order iteratively 
         const Node* curNode = n;
     
         while (!fakeStack.empty() || curNode != nullptr){     //Stack based iteration (the or covers the root case)
             while (curNode != nullptr){ //Travel all the way left until you can't
-                std::cout << curNode << std::endl;
                 fakeStack.push_back(curNode);   //Push to stack
                 curNode = curNode->left;        //Travel left
             }
             //Now, curNode is as far left as it can be (nullptr), so get the node from the stack
             curNode = fakeStack.back();
             fakeStack.pop_back();
-            std::cout << "function applied to " << curNode << std::endl;
             fn(curNode->rec);   //Perform the function on this node
 
             curNode = curNode->right;   //Go to right subtree and repeat
                                         //when this eventually reaches a nullptr itself (leaf), it will pop back up one layer to the parent
                                         //When the parent is the root, fakeStack will be empty and the while loop closes
         }
-
-        // in_order(n->left, fn);  //Does left side
-        // fn(n->rec);             //Applies function to memory rec of this node
-        // in_order(n->right, fn); //Goes through right side     
 
     }
 
