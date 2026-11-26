@@ -56,7 +56,7 @@ ConfirmPolicy::ConfirmPolicy(const std::vector<std::string>& programs) {
 Decision ConfirmPolicy::evaluate(const CommandRequest& req) {
     // TODO: Decision::ask(...) for listed programs, Decision::allow(...) otherwise.
     if (programs_.find(req.program) != programs_.end()){    //If the program is listed
-        Decision::ask("'rm' needs confirmation to run", name());
+        return Decision::ask("'rm' needs confirmation to run", name());
     }
     return Decision::allow("'rm' allowed to run", name());
 }

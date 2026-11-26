@@ -513,6 +513,67 @@ TEST(ctx_over_budget){
 // Policy — 2 examples
 // =========================================================================
 
+//Tests empty cases for the four policy types
+TEST(pol_empty_cases){
+    AllowlistPolicy emptyA(std::vector<std::string>{});       //Empty allowlist policy
+    ArgumentPatternPolicy emptyP(std::vector<std::string>{}); //Empty argument pattern policy
+    ConfirmPolicy emptyC(std::vector<std::string>{});         //Empty confirm policy
+    ManualClock clock(0);           //Manual clock initialized to zero for rate limit policy
+    RateLimitPolicy emptyCl(0,0, clock);    //Empty (as empty as it can get) ratelimit policy
+
+    CommandRequest sampleRequest{"Allow me", std::vector<std::string>{"Arga","Argb"}, "id=10"};
+    CommandRequest emptyRequest{"",std::vector<std::string>{},""};
+    CHECK_EQ(emptyA.evaluate(sampleRequest).kind, Decision::Kind::Deny); //Nothing on allow list: deny
+    CHECK_EQ(emptyA.evaluate(emptyRequest).kind, Decision::Kind::Deny);  //Nothing on allow list: deny
+
+    CHECK_EQ(emptyP.evaluate(sampleRequest).kind, Decision::Kind::Allow);   //No patterns in deny list: allow
+    CHECK_EQ(emptyP.evaluate(emptyRequest).kind, Decision::Kind::Allow);    //No patterns in deny list: allow
+
+    CHECK_EQ(emptyC.evaluate(sampleRequest).kind, Decision::Kind::Allow);   //No programs on request list: Allow
+    CHECK_EQ(emptyC.evaluate(emptyRequest).kind, Decision::Kind::Allow);    //No programs on request list: Allow
+
+    CHECK_EQ(emptyCl.evaluate(sampleRequest).kind, Decision::Kind::Deny);   //bandwidth is zero: Denies every request
+    CHECK_EQ(emptyCl.evaluate(emptyRequest).kind, Decision::Kind::Deny);    //  
+}
+
+//Allow list allow/deny
+TEST(pol_allow_list_cases){
+    AllowlistPolicy a(std::vector<std::string>{"Allow Me", "2nd","Third"});
+    CommandRequest denyRequest{"Deny Me",std::vector<std::string>{"Args"},"id=0"};
+    CommandRequest allowRequest{"Allow Me", std::vector<std::string>{"Args"},"id=1"};
+    CommandRequest allowDownTheLineRequest{"Third",std::vector<std::string>{"Args"},"id=2"};
+
+    CHECK_EQ(a.evaluate(denyRequest).kind, Decision::Kind::Deny);
+    CHECK_EQ(a.evaluate(allowRequest).kind, Decision::Kind::Allow);
+    CHECK_EQ(a.evaluate(allowDownTheLineRequest).kind, Decision::Kind::Allow);
+}
+
+//ArgumentPattern Blacklist allow/deny
+TEST(pol_argument_pattern_poliicy_cases){
+    ArgumentPatternPolicy p(std::vector<std::string>{"deny","don't do","123 xyz"});
+    CommandRequest allowRequest{"Allow Me", std::vector<std::string>{"allow", "123abc"}, "id=0"};
+    CommandRequest deny1stArgs{"Deny Me", std::vector<std::string>{"deny","This ok"}, "id=1"};
+    CommandRequest denyLaterArgs{"Deny Me 2", std::vector<std::string>{"fine", "alright", "don't do"}, "id=2"};
+    CommandRequest denySplitNames{"Deny Me 123", std::vector<std::string>{"xyz", "other arg"}, "id=3"};
+
+    CHECK_EQ(p.evaluate(allowRequest).kind, Decision::Kind::Allow);
+    CHECK_EQ(p.evaluate(deny1stArgs).kind, Decision::Kind::Deny);
+    CHECK_EQ(p.evaluate(denyLaterArgs).kind, Decision::Kind::Deny);
+    CHECK_EQ(p.evaluate(denySplitNames).kind, Decision::Kind::Deny);
+}
+
+//Confirm Policy Ask/Allow
+TEST(pol_confirm_policy_cases){
+    ConfirmPolicy c(std::vector<std::string>{"Ask Me!", "number 2", "3"});
+    CommandRequest allowRequest{"Allow Me", std::vector<std::string>{"args"},"id=0"};
+    CommandRequest askRequest{"Ask Me!", std::vector<std::string>{"args"},"id=1"};
+    CommandRequest askLater{"3", std::vector<std::string>{"args"},"id=2"};
+
+    CHECK_EQ(c.evaluate(allowRequest).kind, Decision::Kind::Allow);
+    CHECK_EQ(c.evaluate(askRequest).kind, Decision::Kind::Ask);
+    CHECK_EQ(c.evaluate(askLater).kind, Decision::Kind::Ask);
+}
+
 // Example 5 (pol): the sliding window. A request exactly `window` seconds
 // after an allowed one no longer counts it.
 TEST(pol_rate_limit_window_boundary) {
@@ -528,6 +589,29 @@ TEST(pol_rate_limit_window_boundary) {
     clock.advance(8);
     CHECK(p.evaluate(req).kind == Decision::Kind::Allow);   // t = 110: 100 has left (110 - 100 = 10)
     CHECK(p.tracked() <= 2u);
+}
+
+TEST(pol_chain_empty_cases){
+    PolicyChain emptyChain;
+    CommandRequest sampleRequest{"Sample",std::vector<std::string>{"Example"},"id=0"};
+    CommandRequest emptyRequest;
+
+    CHECK(!emptyChain.add(nullptr));    //Deny addition of nullptr child that could gum up the works
+
+    CHECK_EQ(emptyChain.evaluate(sampleRequest).kind, Decision::Kind::Deny);    //Deny evaluation with no children
+    CHECK_EQ(emptyChain.evaluate(emptyRequest).kind, Decision::Kind::Deny);
+    CHECK_EQ(emptyChain.evaluate(sampleRequest).policy, "chain");       //Checks correct policy for denial
+}
+
+//Being denied on one policy denies entire request, even if allowed on earlier policy
+TEST(pol_chain_precedence){
+    PolicyChain pChain;
+    pChain.add(std::make_unique<AllowlistPolicy>(std::vector<std::string>{"Allowed Here"}));
+    pChain.add(std::make_unique<ArgumentPatternPolicy>(std::vector<std::string>{"Not", "Allowed Here"}));
+    CommandRequest allowDeny{"Allowed Here",std::vector<std::string>{"Not","Allowed Here"}, "id=0"};
+    Decision d = pChain.evaluate(allowDeny);
+    CHECK_EQ(d.kind,Decision::Kind::Deny);  //Checks that it denies this request
+    CHECK_EQ(d.policy, "patterns");     //Checks that the right thing denies it
 }
 
 // Example 6 (pol): first Deny wins and later policies are not asked; with no
@@ -555,6 +639,36 @@ TEST(pol_chain_first_deny_stops_first_ask_wins) {
     CHECK_EQ(d.policy, std::string("no"));
     CHECK_EQ(after_ptr->calls, 0);     // never evaluated: the chain stopped at the Deny
 }
+
+TEST(pol_chain_nested){
+    PolicyChain parent;
+    auto child = std::make_unique<PolicyChain>();
+    PolicyChain* rawChild = child.get();
+    child->add(std::make_unique<AllowlistPolicy>(std::vector<std::string>{"Allow Me!","before"}));
+    child->add(std::make_unique<ArgumentPatternPolicy>(std::vector<std::string>{"deny this"}));
+    
+    REQUIRE(parent.add(std::move(child)));
+
+    parent.add(std::make_unique<AllowlistPolicy>(std::vector<std::string>{"after","Allow Me!"}));
+    CommandRequest allowThisChild{"before",std::vector<std::string>{"Hello"},"id=0"};
+    CommandRequest denyThisChild{"Allow Me!", std::vector<std::string>{"deny this"},"id=1"};
+    CommandRequest allowThisParent{"Allow Me!",std::vector<std::string>{"a"},"id=2"};
+
+    Decision d1 = parent.evaluate(allowThisChild);      //Will be allowed by child but not parent chain
+    Decision d1_1 = rawChild->evaluate(allowThisChild);     //Double checks that it was allowed by child
+    Decision d2 = parent.evaluate(denyThisChild);       //Denied by child
+    Decision d3 = parent.evaluate(allowThisParent);     //Allowed all the way through
+
+    CHECK_EQ(d1.kind, Decision::Kind::Deny);    //Should deny from the parent
+    CHECK_EQ(d1_1.kind, Decision::Kind::Allow); //Should be allowed by the child
+    
+    CHECK_EQ(d2.kind, Decision::Kind::Deny);   //Should be denied by child
+    
+    CHECK_EQ(d3.kind, Decision::Kind::Allow);   //Allowed all the way through
+}
+
+
+
 
 // =========================================================================
 // Skills — 2 examples
